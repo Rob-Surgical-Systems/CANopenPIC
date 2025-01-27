@@ -723,6 +723,12 @@ void CO_CANinterrupt(CO_CANmodule_t *CANmodule){
 
     /* receive interrupt (New CAN message is available in RX FIFO 0 buffer) */
     if(ICODE == 0){
+//
+//        static int a = 0;
+//        if(a++ > 10)
+            LATFbits.LATF3      = !PORTFbits.RF3; // FAULT LED blinks! so flow is detected
+
+
         CO_CANrxMsg_t *rcvMsg;      /* pointer to received message in CAN module */
         uint16_t index;             /* index of received message */
         uint16_t rcvMsgIdent;       /* identifier of the received message */

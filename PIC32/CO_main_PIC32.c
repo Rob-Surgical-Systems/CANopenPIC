@@ -24,6 +24,7 @@
 
 #include <xc.h>
 #include <sys/attribs.h>
+#include <plib.h>
 
 #include "CANopen.h"
 #include "storage/CO_storageEeprom.h"
@@ -32,39 +33,60 @@
 
 
 /* Default configuration bit settings */
-#ifndef CO_CONFIGURATION_BITS_CONFIGURED
-#define CO_CONFIGURATION_BITS_CONFIGURED
-#pragma config FVBUSONIO = OFF      /* USB VBUS_ON Selection */
-#pragma config FUSBIDIO = OFF       /* USB USBID Selection */
-#pragma config UPLLEN = OFF         /* USB PLL Enable */
-#pragma config UPLLIDIV = DIV_12    /* USB PLL Input Divider */
-#pragma config FCANIO = ON          /* CAN IO Pin Selection */
-#pragma config FETHIO = ON          /* Ethernet IO Pin Selection */
-#pragma config FMIIEN = ON          /* Ethernet MII Enable (ON = MII enabled) */
-#pragma config FSRSSEL = PRIORITY_7 /* SRS (Shadow registers set) Select */
-#pragma config POSCMOD = XT         /* Primary Oscillator */
-#pragma config FSOSCEN = OFF        /* Secondary oscillator Enable */
-#pragma config FNOSC = PRIPLL       /* Oscillator Selection */
-#pragma config FPLLIDIV = DIV_2     /* PLL Input Divider */
-#pragma config FPLLMUL = MUL_16     /* PLL Multiplier */
-#pragma config FPLLODIV = DIV_1     /* PLL Output Divider Value */
-#pragma config FPBDIV = DIV_2       /* Bootup PBCLK divider */
-#pragma config FCKSM = CSDCMD       /* Clock Switching and Monitor Selection */
-#pragma config OSCIOFNC = OFF       /* CLKO Enable */
-#pragma config IESO = OFF           /* Internal External Switch Over */
-#pragma config FWDTEN = OFF         /* Watchdog Timer Enable */
-#pragma config WDTPS = PS1024       /* Watchdog Timer Postscale Select */
-#pragma config CP = OFF             /* Code Protect Enable */
-#pragma config BWP = ON             /* Boot Flash Write Protect */
-#pragma config PWP = PWP256K        /* Program Flash Write Protect */
-#pragma config DEBUG = ON           /* Background Debugger Enable */
-#ifdef CO_ICS_PGx1
-#pragma config ICESEL = ICS_PGx1    /* ICE/ICD Comm Channel Select */
-#else
-#pragma config ICESEL = ICS_PGx2    /* ICE/ICD Comm Channel Select (2 for
-                                     * Explorer16 and Max32 board) */
-#endif
-#endif
+//#ifndef CO_CONFIGURATION_BITS_CONFIGURED
+//#define CO_CONFIGURATION_BITS_CONFIGURED
+//#pragma config FVBUSONIO = OFF      /* USB VBUS_ON Selection */
+//#pragma config FUSBIDIO = OFF       /* USB USBID Selection */
+//#pragma config UPLLEN = OFF         /* USB PLL Enable */
+//#pragma config UPLLIDIV = DIV_12    /* USB PLL Input Divider */
+//#pragma config FCANIO = ON          /* CAN IO Pin Selection */
+////#pragma config FETHIO = ON          /* Ethernet IO Pin Selection */
+////#pragma config FMIIEN = ON          /* Ethernet MII Enable (ON = MII enabled) */
+//#pragma config FSRSSEL = PRIORITY_7 /* SRS (Shadow registers set) Select */
+//#pragma config POSCMOD = XT         /* Primary Oscillator */
+//#pragma config FSOSCEN = OFF        /* Secondary oscillator Enable */
+//#pragma config FNOSC = PRIPLL       /* Oscillator Selection */
+//#pragma config FPLLIDIV = DIV_2     /* PLL Input Divider */
+//#pragma config FPLLMUL = MUL_16     /* PLL Multiplier */
+//#pragma config FPLLODIV = DIV_1     /* PLL Output Divider Value */
+//#pragma config FPBDIV = DIV_2       /* Bootup PBCLK divider */
+//#pragma config FCKSM = CSDCMD       /* Clock Switching and Monitor Selection */
+//#pragma config OSCIOFNC = OFF       /* CLKO Enable */
+//#pragma config IESO = OFF           /* Internal External Switch Over */
+//#pragma config FWDTEN = OFF         /* Watchdog Timer Enable */
+//#pragma config WDTPS = PS1024       /* Watchdog Timer Postscale Select */
+//#pragma config CP = OFF             /* Code Protect Enable */
+//#pragma config BWP = ON             /* Boot Flash Write Protect */
+//#pragma config PWP = PWP256K        /* Program Flash Write Protect */
+//#pragma config DEBUG = ON           /* Background Debugger Enable */
+//#ifdef CO_ICS_PGx1
+//#pragma config ICESEL = ICS_PGx1    /* ICE/ICD Comm Channel Select */
+//#else
+//#pragma config ICESEL = ICS_PGx2    /* ICE/ICD Comm Channel Select (2 for
+//                                     * Explorer16 and Max32 board) */
+//#endif
+//#endif
+
+// RSS custom
+#pragma config FSRSSEL      = PRIORITY_7    // SRS Select (SRS Priority 7)
+#pragma config FCANIO       = OFF           // CAN I/O Pin Select (OFF: ALTERNATE CAN(CO3/9)! ON:Default CAN I/O
+#pragma config FUSBIDIO     = OFF           // USB USID Selection (Controlled by the USB Module)
+#pragma config FVBUSONIO    = OFF           // USB VBUS ON Selection (Controlled by USB Module)
+#pragma config FSOSCEN  	= OFF       // Disable secondary oscillator
+#pragma config FWDTEN   	= OFF       // Disable watchdog timer
+#pragma config WDTPS        = PS1024       /* Watchdog Timer Postscale Select */
+#pragma config POSCMOD  	= HS        // High speed crystal mode
+#pragma config FNOSC    	= PRIPLL    // Use Primary Oscillator with PLL (XT, HS, or EC)
+#pragma config FPLLIDIV 	= DIV_4     // Divide 16MHz by 4 to have 4MHz before PLL
+#pragma config FPLLMUL  	= MUL_20    // Multiply PLL by 20 (now 80MHz)
+#pragma config FPLLODIV 	= DIV_1     // Divide by 1 after PLL (now 80 MHz)
+#pragma config FPBDIV   	= DIV_1     // pheripheral clock = sys clk
+
+// DEVCFG
+#pragma config ICESEL   	= ICS_PGx1  // ICE/ICD Comm Channel Select (ICE EMUC1/EMUD1 pins shared with PGC1/PGD1)
+#pragma config PWP      	= OFF       // Program Flash Write Protect (Disable)
+#pragma config BWP      	= OFF       // Boot Flash Write Protect bit (Protection Disabled)
+#pragma config CP       	= OFF       // Code Protect (Protection Disabled)
 
 
 /*
@@ -283,7 +305,7 @@ int main (void) {
 #endif
 
     /* Configure system for maximum performance. plib is necessary for that.*/
-    /* SYSTEMConfig(CO_FSYS*1000, SYS_CFG_WAIT_STATES | SYS_CFG_PCACHE); */
+    SYSTEMConfig(CO_FSYS*1000, SYS_CFG_WAIT_STATES | SYS_CFG_PCACHE);
 
     /* Enable system multi vectored interrupts */
     INTCONbits.MVEC = 1;
@@ -337,6 +359,8 @@ int main (void) {
         mlStorage.pendingNodeId = CO_LSS_NODE_ID_ASSIGNMENT;
     }
 
+    LATFbits.LATF3      = 0; // reset LED, or it may be already turned on!
+    TRISFbits.TRISF3    = 1; // FAULT LED - Rx
 
     while (reset != CO_RESET_APP) {
 /* CANopen communication reset - initialize CANopen objects *******************/
@@ -464,7 +488,6 @@ int main (void) {
         }
     } /* while(reset != CO_RESET_APP */
 
-
 /* program exit ***************************************************************/
     CO_RT_THREAD_ENABLE(0);
     CO_CANRX_ENABLE(0);
@@ -537,6 +560,7 @@ CO_RT_THREAD_ISR() {
 /* CAN interrupt function *****************************************************/
 #ifdef CO_CANRX_ISR_DEFAULT
 CO_CANRX_ISR() {
+    
     CO_CANinterrupt(CO->CANmodule);
     /* Clear combined Interrupt flag */
     CO_CANRX_ISR_FLAG = 0;

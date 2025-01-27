@@ -27,10 +27,13 @@
 
 
 /* CANopen LED diodes, as present on Explorer 16 and Max32 boards. */
-#define CAN_INIT_LEDS() TRISAbits.TRISA2 = TRISCbits.TRISC1 = TRISAbits.TRISA3=0
-#define CAN_RUN_LED LATAbits.LATA2 = LATCbits.LATC1
-#define CAN_ERROR_LED LATAbits.LATA3
-
+#define CAN_INIT_LEDS() TRISFbits.TRISF2 = TRISFbits.TRISF8 = 0
+#define CAN_RUN_LED     LATFbits.LATF2
+#define CAN_ERROR_LED   LATFbits.LATF8
+//static char dummy;
+//#define CAN_INIT_LEDS() TRISCbits.TRISC1 = 0 // TEST LED
+//#define CAN_RUN_LED     LATAbits.LATA2
+//#define CAN_ERROR_LED   dummy // whatever
 
 /******************************************************************************/
 CO_ReturnError_t app_programStart(uint16_t *bitRate,
@@ -46,6 +49,8 @@ CO_ReturnError_t app_programStart(uint16_t *bitRate,
      * for defaults. */
 
     /* Set initial CAN bitRate and CANopen nodeId. May be configured by LSS. */
+//    if (*bitRate == 0) *bitRate = 250;
+//    if (*nodeId == 0) *nodeId = 0x30;
     if (*bitRate == 0) *bitRate = 250;
     if (*nodeId == 0) *nodeId = 0x30;
 
