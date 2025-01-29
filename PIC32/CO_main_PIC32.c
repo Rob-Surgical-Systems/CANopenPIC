@@ -22,183 +22,47 @@
  * limitations under the License.
  */
 
-#include <xc.h>
-#include <sys/attribs.h>
-#include <plib.h>
+/** 
+ * Modified version, by EF, so the compilation succeeds in a F03 firmware.
+ * Each modification is numbered, i.e. 1)
+ */
+
+//#include <xc.h>
+//#include <sys/attribs.h>
+//#include <plib.h>
 
 #include "CANopen.h"
-#include "storage/CO_storageEeprom.h"
+//#include "storage/CO_storageEeprom.h"
 #include "OD.h"
 #include "CO_application.h"
 
+// 1) Configuration bits were removed from here, as they are declared in its own file
 
-/* Default configuration bit settings */
-//#ifndef CO_CONFIGURATION_BITS_CONFIGURED
-//#define CO_CONFIGURATION_BITS_CONFIGURED
-//#pragma config FVBUSONIO = OFF      /* USB VBUS_ON Selection */
-//#pragma config FUSBIDIO = OFF       /* USB USBID Selection */
-//#pragma config UPLLEN = OFF         /* USB PLL Enable */
-//#pragma config UPLLIDIV = DIV_12    /* USB PLL Input Divider */
-//#pragma config FCANIO = ON          /* CAN IO Pin Selection */
-////#pragma config FETHIO = ON          /* Ethernet IO Pin Selection */
-////#pragma config FMIIEN = ON          /* Ethernet MII Enable (ON = MII enabled) */
-//#pragma config FSRSSEL = PRIORITY_7 /* SRS (Shadow registers set) Select */
-//#pragma config POSCMOD = XT         /* Primary Oscillator */
-//#pragma config FSOSCEN = OFF        /* Secondary oscillator Enable */
-//#pragma config FNOSC = PRIPLL       /* Oscillator Selection */
-//#pragma config FPLLIDIV = DIV_2     /* PLL Input Divider */
-//#pragma config FPLLMUL = MUL_16     /* PLL Multiplier */
-//#pragma config FPLLODIV = DIV_1     /* PLL Output Divider Value */
-//#pragma config FPBDIV = DIV_2       /* Bootup PBCLK divider */
-//#pragma config FCKSM = CSDCMD       /* Clock Switching and Monitor Selection */
-//#pragma config OSCIOFNC = OFF       /* CLKO Enable */
-//#pragma config IESO = OFF           /* Internal External Switch Over */
-//#pragma config FWDTEN = OFF         /* Watchdog Timer Enable */
-//#pragma config WDTPS = PS1024       /* Watchdog Timer Postscale Select */
-//#pragma config CP = OFF             /* Code Protect Enable */
-//#pragma config BWP = ON             /* Boot Flash Write Protect */
-//#pragma config PWP = PWP256K        /* Program Flash Write Protect */
-//#pragma config DEBUG = ON           /* Background Debugger Enable */
-//#ifdef CO_ICS_PGx1
-//#pragma config ICESEL = ICS_PGx1    /* ICE/ICD Comm Channel Select */
-//#else
-//#pragma config ICESEL = ICS_PGx2    /* ICE/ICD Comm Channel Select (2 for
-//                                     * Explorer16 and Max32 board) */
-//#endif
-//#endif
+// 2) ADC configuration is removed, ADC is processed differently
+//  2.1) CO_PERIPHERAL_CONFIG does not exist anymore
+//  2.2.) ...
 
-// RSS custom
-#pragma config FSRSSEL      = PRIORITY_7    // SRS Select (SRS Priority 7)
-#pragma config FCANIO       = OFF           // CAN I/O Pin Select (OFF: ALTERNATE CAN(CO3/9)! ON:Default CAN I/O
-#pragma config FUSBIDIO     = OFF           // USB USID Selection (Controlled by the USB Module)
-#pragma config FVBUSONIO    = OFF           // USB VBUS ON Selection (Controlled by USB Module)
-#pragma config FSOSCEN  	= OFF       // Disable secondary oscillator
-#pragma config FWDTEN   	= OFF       // Disable watchdog timer
-#pragma config WDTPS        = PS1024       /* Watchdog Timer Postscale Select */
-#pragma config POSCMOD  	= HS        // High speed crystal mode
-#pragma config FNOSC    	= PRIPLL    // Use Primary Oscillator with PLL (XT, HS, or EC)
-#pragma config FPLLIDIV 	= DIV_4     // Divide 16MHz by 4 to have 4MHz before PLL
-#pragma config FPLLMUL  	= MUL_20    // Multiply PLL by 20 (now 80MHz)
-#pragma config FPLLODIV 	= DIV_1     // Divide by 1 after PLL (now 80 MHz)
-#pragma config FPBDIV   	= DIV_1     // pheripheral clock = sys clk
+// Just to remember
+// CO_PBCLK and CO_FSYS are declared in CO_driver_target.h, at some point, they should be redefined or reviewed to avoid duplicates, to meet vocabulary constraints, ..
 
-// DEVCFG
-#pragma config ICESEL   	= ICS_PGx1  // ICE/ICD Comm Channel Select (ICE EMUC1/EMUD1 pins shared with PGC1/PGD1)
-#pragma config PWP      	= OFF       // Program Flash Write Protect (Disable)
-#pragma config BWP      	= OFF       // Boot Flash Write Protect bit (Protection Disabled)
-#pragma config CP       	= OFF       // Code Protect (Protection Disabled)
+// 3) Real time thread configuration, coupled to TMR2 and as triiger to ADC thread, and what they call the Real Time Thread, is deleted too
+// 3.1.) Real time thread may be set to another timer? reuse TMR5 from EtherCAT? called by the Update method?
 
+// 4) TMR2_ISR and ADC_ISR methods have been deleted too!
+// Note that TMR2 was set to 1 [ms]! And it enabled the ADC sampling. Once ADC samples are ready, the ADC ISR will do
 
-/*
- * Configure peripherals
- * - Configure Analog Inputs AI0..AI15:
- *   - AD1CON1:
- *     - FORM = 000b: Data output is unsigned integer, 10bit, right justified
- *     - SSRC = 111b: Internal counter ends sampling and starts conversion
- *     - CLRASAM = 1: Stop conversions after ADC interrupt is generated
- *   - AD1CON2:
- *     - VCFG = 001b: ADC voltage reference is Vref+ and AVss
- *     - CSCNA = 1: Enable scan mode
- *     - SMPI = 1111b: Interrupts after each 16th sample/convert sequence
- *   - AD1CON3:
- *     - ADRC = 0: Clock derived from Peripheral Bus Clock (PBCLK)
- *     - SAMC = 31: Auto sample time = 31*TAD
- *     - ADCS = 0..2: (If PBCLK=32MHz -> TAD=125ns)
- *   - AD1PCFG, AD1CSSL: Use all ports AI0..AI15
- *   - Enable ADC interrupt with priority 3, turn ADC On. ADC conversion is
- *     triggered by high priority timer interval interrupt. After conversion is
- *     completed, Real Time Thread is executed, see its definitions below.
- *     Analog values AN0..AN15 are available in ADC1BUF0..ADC1BUF15
- */
-#ifndef CO_PERIPHERAL_CONFIG
-/* ADC conversion clock select */
-#if CO_PBCLK <= 24000
-    #define HW_ADCS 0
-#elif CO_PBCLK <= 48000
-    #define HW_ADCS 1
-#elif CO_PBCLK <= 96000
-    #define HW_ADCS 2
-#endif
-#define CO_PERIPHERAL_CONFIG() { \
-    AD1CON1 = 0x00F0; \
-    AD1CON2 = 0x243C; \
-    AD1CON3 = 0x1F00 | HW_ADCS; \
-    AD1CHS = 0; \
-    AD1PCFG = 0; \
-    AD1CSSL = 0xFFFF; \
-    AD1CON1SET = 0x8000; \
-}
-#endif /* CO_PERIPHERAL_CONFIG */
-
-
-/*
- * Real Time Thread definitions
- *
- * Configure timer interrupt, 1ms interval, highest priority. Timer will trigger
- * ADC conversion. After conversion of all analog inputs completed, ADC
- * interrupt will be used as Real Time Thread.
- */
-#ifndef CO_RT_THREAD_CONFIG
-#if CO_PBCLK < 2 || CO_PBCLK > 65000
-    #error wrong timer configuration for real time thread
-#endif
-#define CO_RT_THREAD_CONFIG() { \
-    T2CON = 0; \
-    TMR2 = 0; \
-    PR2 = CO_PBCLK - 1; \
-    T2CON = 0x8000; \
-    IFS0bits.T2IF = 0; \
-    IPC2bits.T2IP = 7; \
-    IFS1bits.AD1IF = 0; \
-    IEC1bits.AD1IE = 1; \
-    IPC6bits.AD1IP = 3; \
-}
-#endif
-/* Interval of the realtime thread */
-#ifndef CO_RT_THREAD_INTERVAL_US
-#define CO_RT_THREAD_INTERVAL_US 1000
-#endif
-/* Additional external triggers, which can be used inside the first interrupt */
-#ifndef CO_RT_THREAD_CUSTOM_TRIGGERS
-#define CO_RT_THREAD_CUSTOM_TRIGGERS()
-#endif
-/* Default interrupt handler, twin, timer starts ADC conversion, then adc isr */
-#ifndef CO_RT_THREAD_ISR
-#define CO_RT_THREAD_ISR_DEFAULT
-#define CO_RT_THREAD_ISR() void __ISR(_TIMER_2_VECTOR, IPL7SRS) _adIsr(void) { \
-    static bool_t skipFirstPass = true; \
-    if(skipFirstPass) { skipFirstPass = false; } \
-    else { \
-        AD1CON1bits.ASAM = 1; \
-        CO_RT_THREAD_CUSTOM_TRIGGERS(); \
-    } \
-    IFS0bits.T2IF = 0; \
-} \
-void __ISR(_ADC_VECTOR, IPL3SOFT) _rtThread(void)
-#endif
-/* Enable interrupt, 0 or 1 */
-#ifndef CO_RT_THREAD_ENABLE
-#define CO_RT_THREAD_ENABLE(ENABLE) IEC0bits.T2IE = ENABLE
-#endif
-/* Interrupt flag bit, used inside _rtThread */
-#ifndef CO_RT_THREAD_ISR_FLAG
-#define CO_RT_THREAD_ISR_FLAG IFS1bits.AD1IF
-#endif
-
-
+// 5.) CANRx configuration is removed, it set the ISR IP to 5. Now it would be IP=6
 /* CAN receive interrupt definitions */
 /* Configure CAN rx interrupt, priority is 5, higher than timer */
-#ifndef CO_CANRX_CONFIG
-#define CO_CANRX_CONFIG() { \
-    IFS1bits.CAN1IF = 0; \
-    IPC11bits.CAN1IP = 5; \
-}
-#endif
+
+// 6.) Default CAN_1_VECTOR ISR is commented --> it was empty, probably redefined somewhere, so here it compiles but links to another one
 /* Default interrupt handler, use same priority as in CO_CANRX_CONFIG() */
-#ifndef CO_CANRX_ISR
-#define CO_CANRX_ISR_DEFAULT
-#define CO_CANRX_ISR() void __ISR(_CAN_1_VECTOR, IPL5SOFT) _canRxIsr(void)
-#endif
+//#ifndef CO_CANRX_ISR
+//#define CO_CANRX_ISR_DEFAULT
+//#define CO_CANRX_ISR() void __ISR(_CAN_1_VECTOR, IPL5SOFT) _canRxIsr(void)
+//#endif
+
+// 6.1.) next ones are keep but probably removed in a near future
 /* Enable interrupt, 0 or 1 */
 #ifndef CO_CANRX_ENABLE
 #define CO_CANRX_ENABLE(ENABLE) IEC1bits.CAN1IE = ENABLE
@@ -208,6 +72,7 @@ void __ISR(_ADC_VECTOR, IPL3SOFT) _rtThread(void)
 #define CO_CANRX_ISR_FLAG IFS1bits.CAN1IF
 #endif
 
+// 7. Clear watchdog is modified, to an empty method, as it is already implemented somewhere else with other logics.
 
 /* Watchdog timer */
 #ifndef CO_clearWDT
@@ -276,8 +141,9 @@ static bool_t LSScfgStoreCallback(void *object, uint8_t id, uint16_t bitRate) {
     return true;
 }
 
-/* main ***********************************************************************/
-int main (void) {
+// 8.) Main is renamed to CO_main
+// 8.1) It has only the Initialization stage logics
+int CO_Init () {
     CO_ReturnError_t err;
     CO_NMT_reset_cmd_t reset = CO_RESET_NOT;
     bool_t firstRun = true;
@@ -304,17 +170,8 @@ int main (void) {
     uint32_t storageInitError = 0;
 #endif
 
-    /* Configure system for maximum performance. plib is necessary for that.*/
-    SYSTEMConfig(CO_FSYS*1000, SYS_CFG_WAIT_STATES | SYS_CFG_PCACHE);
-
-    /* Enable system multi vectored interrupts */
-    INTCONbits.MVEC = 1;
-    __builtin_enable_interrupts();
-
-    /* Disable JTAG and trace port */
-    DDPCONbits.JTAGEN = 0;
-    DDPCONbits.TROEN = 0;
-
+    
+// 8.2.) Removes PIC configuration, as it is done in the main.cpp file!
 
     /* Allocate memory for CANopen objects */
     uint32_t heapMemoryUsed = 0;
@@ -460,33 +317,49 @@ int main (void) {
         CO_RT_THREAD_ENABLE(1);
         CO_CANRX_ENABLE(1);
         reset = CO_RESET_NOT;
+    } /* while(reset != CO_RESET_APP */
+    
+    return EXIT_SUCCESS;
+}
+    
 
+int CO_Config ()
+{
+    return EXIT_SUCCESS;
+}
 
-        while (reset == CO_RESET_NOT) {
+// 8.3.) Update stage
+#warning "New Update method, but SSL service may require to reuse some code, or all, of the Initialization stage"
+int CO_Update ()
+{
+    CO_NMT_reset_cmd_t reset = CO_RESET_NOT;
+    uint32_t CO_timer_us_previous = 0;
+    
+    while (reset == CO_RESET_NOT)
+    {
 /* loop for normal program execution ******************************************/
 
-            /* calculate time difference since last cycle */
-            uint32_t timer_us_copy = CO_timer_us;
-            uint32_t timeDifference_us = timer_us_copy - CO_timer_us_previous;
-            CO_timer_us_previous = timer_us_copy;
+        /* calculate time difference since last cycle */
+        uint32_t timer_us_copy = CO_timer_us;
+        uint32_t timeDifference_us = timer_us_copy - CO_timer_us_previous;
+        CO_timer_us_previous = timer_us_copy;
 
-            CO_clearWDT();
+        CO_clearWDT();
 
-            /* process CANopen objects */
-            reset = CO_process(CO, false, timeDifference_us, NULL);
+        /* process CANopen objects */
+        reset = CO_process(CO, false, timeDifference_us, NULL);
 
-            CO_clearWDT();
+        CO_clearWDT();
 
-            /* Execute external application code */
-            app_programAsync(CO, timeDifference_us);
+        /* Execute external application code */
+        app_programAsync(CO, timeDifference_us);
 
-            CO_clearWDT();
+        CO_clearWDT();
 
 #if (CO_CONFIG_STORAGE) & CO_CONFIG_STORAGE_ENABLE
-            CO_storageEeprom_auto_process(&storage, false);
+        CO_storageEeprom_auto_process(&storage, false);
 #endif
-        }
-    } /* while(reset != CO_RESET_APP */
+    }
 
 /* program exit ***************************************************************/
     CO_RT_THREAD_ENABLE(0);
@@ -524,7 +397,8 @@ CO_RT_THREAD_ISR() {
     CO_RT_THREAD_ISR_FLAG = 0;
 
     /* No need to CO_LOCK_OD(co->CANmodule); this is interrupt */
-    if (!CO->nodeIdUnconfigured && CO->CANmodule->CANnormal) {
+    if (!CO->nodeIdUnconfigured && CO->CANmodule->CANnormal)
+    {
         bool_t syncWas = false;
 
 #if (CO_CONFIG_SYNC) & CO_CONFIG_SYNC_ENABLE
@@ -557,7 +431,7 @@ CO_RT_THREAD_ISR() {
 #endif /* CO_RT_THREAD_ISR_DEFAULT */
 
 
-/* CAN interrupt function *****************************************************/
+// 9.) Deletes the CAN interrupt function *****************************************************/
 #ifdef CO_CANRX_ISR_DEFAULT
 CO_CANRX_ISR() {
     
