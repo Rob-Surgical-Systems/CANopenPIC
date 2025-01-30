@@ -27,6 +27,8 @@
  * Each modification is numbered, i.e. 1)
  */
 
+// 0) Comment unnecessary includes to simplify the project, thus, easier to fix issues
+
 //#include <xc.h>
 //#include <sys/attribs.h>
 //#include <plib.h>
