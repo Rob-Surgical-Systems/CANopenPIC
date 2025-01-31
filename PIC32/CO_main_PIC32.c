@@ -25,13 +25,23 @@
 /** 
  * Modified version, by EF, so the compilation succeeds in a F03 firmware.
  * Each modification is numbered, i.e. 1)
+ * 
+ * TIMER1 instead of TIMER2 for RT.
+ * Storage EEPROM disabled to avoid conflicts with our application EEPROM.
+ * ADC interrupt is removed from CANOpen, already processed by the peripheral object itself.
+ * Baud rate set to 1 [Mbps].
+ * COB-ID set to 0x01.
+ * 
+ * In appl_max32_demo.c the LEDs are remapped:
+ * RUN_LED is set as LED_TESTDEV
+ * ERROR_LED is set as LED_ERROR although it may collide with current. TODO: another pin? or just a dummy variable?
  */
 
 // 0) Comment unnecessary includes to simplify the project, thus, easier to fix issues
 
-//#include <xc.h>
-//#include <sys/attribs.h>
-//#include <plib.h>
+#include <xc.h>
+#include <sys/attribs.h> // Interrupt attributes
+#include <plib.h>
 
 #include "CANopen.h"
 //#include "storage/CO_storageEeprom.h"
@@ -49,22 +59,53 @@
 
 // 3) Real time thread configuration, coupled to TMR2 and as triiger to ADC thread, and what they call the Real Time Thread, is deleted too
 // 3.1.) Real time thread may be set to another timer? reuse TMR5 from EtherCAT? called by the Update method?
+// Done with TIMER1 instead of TIMER2 but no ADC!
 
-// 4) TMR2_ISR and ADC_ISR methods have been deleted too!
-// Note that TMR2 was set to 1 [ms]! And it enabled the ADC sampling. Once ADC samples are ready, the ADC ISR will do
+#ifndef CO_RT_THREAD_CONFIG
+#define CO_RT_THREAD_CONFIG() { \
+    T1CON = 0; \
+    TMR1 = 0; \
+    PR1 = CO_PBCLK - 1; \
+    T1CON = 0x8000; \
+    IFS0bits.T1IF = 0; \
+    IPC1bits.T1IP = 7; \
+}
+#endif
 
-// 5.) CANRx configuration is removed, it set the ISR IP to 5. Now it would be IP=6
+/* Interval of the realtime thread */
+#ifndef CO_RT_THREAD_INTERVAL_US
+#define CO_RT_THREAD_INTERVAL_US 1000
+#endif
+
+//// 4) TMR1_ISR instead of TMR2_ISR, no ADC_ISR method!
+///* Default interrupt handler, twin, timer starts ADC conversion, then adc isr */
+#ifndef CO_RT_THREAD_ISR
+#define CO_RT_THREAD_ISR_DEFAULT
+//#define CO_RT_THREAD_ISR() void __ISR(_TIMER_1_VECTOR, IPL7SRS) Timer1Handlr(void) { \
+//    IFS0bits.T1IF = 0; \
+//}
+#endif
+
+/* Enable interrupt, 0 or 1 */
+#ifndef CO_RT_THREAD_ENABLE
+#define CO_RT_THREAD_ENABLE(ENABLE) IEC0bits.T1IE = ENABLE
+#endif
+
 /* CAN receive interrupt definitions */
 /* Configure CAN rx interrupt, priority is 5, higher than timer */
+#ifndef CO_CANRX_CONFIG
+#define CO_CANRX_CONFIG() { \
+    IFS1bits.CAN1IF = 0; \
+    IPC11bits.CAN1IP = 5; \
+}
+#endif
 
-// 6.) Default CAN_1_VECTOR ISR is commented --> it was empty, probably redefined somewhere, so here it compiles but links to another one
 /* Default interrupt handler, use same priority as in CO_CANRX_CONFIG() */
-//#ifndef CO_CANRX_ISR
-//#define CO_CANRX_ISR_DEFAULT
-//#define CO_CANRX_ISR() void __ISR(_CAN_1_VECTOR, IPL5SOFT) _canRxIsr(void)
-//#endif
+#ifndef CO_CANRX_ISR
+#define CO_CANRX_ISR_DEFAULT
+#define CO_CANRX_ISR() void __ISR(_CAN_1_VECTOR, IPL5SOFT) _canRxIsr(void)
+#endif
 
-// 6.1.) next ones are keep but probably removed in a near future
 /* Enable interrupt, 0 or 1 */
 #ifndef CO_CANRX_ENABLE
 #define CO_CANRX_ENABLE(ENABLE) IEC1bits.CAN1IE = ENABLE
@@ -198,15 +239,16 @@ int CO_Init () {
     }
 #endif
 
-    /* Configure peripherals */
-    CO_PERIPHERAL_CONFIG();
-
     /* Execute external application code */
     uint32_t errInfo_app_programStart = 0;
+#warning "Baud rate set to1Mbps!"
+    mlStorage.pendingBitRate    = (uint16_t)1000U;
+#warning "Node ID set to 0x01!"
+    mlStorage.pendingNodeId     = (uint8_t)0x01;
     err = app_programStart(&mlStorage.pendingBitRate,
                            &mlStorage.pendingNodeId,
                            &errInfo_app_programStart);
-    if (err != CO_ERROR_NO) {
+    if (err != CO_ERROR_NO) { // this sample version returns always CO_ERROR_NO...
         while (1);
     }
 
@@ -218,10 +260,8 @@ int CO_Init () {
         mlStorage.pendingNodeId = CO_LSS_NODE_ID_ASSIGNMENT;
     }
 
-    LATFbits.LATF3      = 0; // reset LED, or it may be already turned on!
-    TRISFbits.TRISF3    = 1; // FAULT LED - Rx
-
-    while (reset != CO_RESET_APP) {
+//    while (reset != CO_RESET_APP) {
+    {
 /* CANopen communication reset - initialize CANopen objects *******************/
         uint32_t errInfo;
         static uint32_t CO_timer_us_previous = 0;
@@ -290,7 +330,7 @@ int CO_Init () {
 
 
         /* First time only initialization. */
-        if (firstRun) {
+        if ( true == firstRun) {
             firstRun = false;
 
             /* Configure real time thread and CAN receive interrupt */
@@ -316,29 +356,98 @@ int CO_Init () {
 
         /* start CAN and enable interrupts */
         CO_CANsetNormalMode(CO->CANmodule);
-        CO_RT_THREAD_ENABLE(1);
+
         CO_CANRX_ENABLE(1);
         reset = CO_RESET_NOT;
-    } /* while(reset != CO_RESET_APP */
+//    } /* while(reset != CO_RESET_APP */
+    }
     
-    return EXIT_SUCCESS;
+    return (int)reset; // valid to notify errors...
 }
     
 
 int CO_Config ()
 {
-    return EXIT_SUCCESS;
+    return (int)CO_ERROR_NO; // this one seems better fit
 }
+
+
+
+
+
+
+/* timer interrupt function executes every millisecond ************************/
+#ifdef CO_RT_THREAD_ISR_DEFAULT
+CO_RT_THREAD_ISR() {
+    CO_timer_us += CO_RT_THREAD_INTERVAL_US;
+
+    /* Execute external application code */
+    app_peripheralRead(CO, CO_RT_THREAD_INTERVAL_US);
+
+//    CO_RT_THREAD_ISR_FLAG = 0;
+
+    /* No need to CO_LOCK_OD(co->CANmodule); this is interrupt */
+    if (!CO->nodeIdUnconfigured && CO->CANmodule->CANnormal)
+    {
+        bool_t syncWas = false;
+
+#if (CO_CONFIG_SYNC) & CO_CONFIG_SYNC_ENABLE
+        syncWas = CO_process_SYNC(CO, CO_RT_THREAD_INTERVAL_US, NULL);
+#endif
+#if (CO_CONFIG_PDO) & CO_CONFIG_RPDO_ENABLE
+        CO_process_RPDO(CO, syncWas, CO_RT_THREAD_INTERVAL_US, NULL);
+#endif
+
+        /* Execute external application code */
+        app_programRt(CO, CO_RT_THREAD_INTERVAL_US);
+
+#if (CO_CONFIG_PDO) & CO_CONFIG_TPDO_ENABLE
+        CO_process_TPDO(CO, syncWas, CO_RT_THREAD_INTERVAL_US, NULL);
+#endif
+
+        /* verify timer overflow */
+#warning "errorReport service is temporally disabled"
+//        if (CO_RT_THREAD_ISR_FLAG == 1) {
+//            CO_errorReport(CO->em, CO_EM_ISR_TIMER_OVERFLOW,
+//                           CO_EMC_SOFTWARE_INTERNAL, 0);
+//            CO_RT_THREAD_ISR_FLAG = 0;
+//        }
+
+        (void) syncWas;
+    }
+
+    /* Execute external application code */
+    app_peripheralWrite(CO, CO_RT_THREAD_INTERVAL_US);
+}
+#endif /* CO_RT_THREAD_ISR_DEFAULT */
+
+// 9.) Deletes the CAN interrupt function *****************************************************/
+#ifdef CO_CANRX_ISR_DEFAULT
+CO_CANRX_ISR() {
+//void CO_RxInterrupt() { // TODO
+    
+    // IEC1bits.CAN1IE register is set/reset by CO_CANinterrupt() below!
+    CO_CANinterrupt(CO->CANmodule);
+    /* Clear combined Interrupt flag */
+    CO_CANRX_ISR_FLAG = 0;
+}
+#endif    
+
+
+
+
 
 // 8.3.) Update stage
 #warning "New Update method, but SSL service may require to reuse some code, or all, of the Initialization stage"
 int CO_Update ()
 {
-    CO_NMT_reset_cmd_t reset = CO_RESET_NOT;
+    static CO_NMT_reset_cmd_t reset = CO_RESET_NOT;
     uint32_t CO_timer_us_previous = 0;
     
-    while (reset == CO_RESET_NOT)
-    {
+    if (reset == CO_RESET_NOT)
+    {        
+        CO_RT_THREAD_ISR();
+        
 /* loop for normal program execution ******************************************/
 
         /* calculate time difference since last cycle */
@@ -364,81 +473,31 @@ int CO_Update ()
     }
 
 /* program exit ***************************************************************/
-    CO_RT_THREAD_ENABLE(0);
-    CO_CANRX_ENABLE(0);
-
-    /* Execute external application code */
-    app_programEnd();
-
-#if (CO_CONFIG_STORAGE) & CO_CONFIG_STORAGE_ENABLE
-    CO_storageEeprom_auto_process(&storage, true);
-#endif
-
-    /* delete objects from memory */
-    CO_CANsetConfigurationMode(CO->CANmodule->CANptr);
-    CO_delete(CO);
-
-    /* reset microcontroller */
-    SYSKEY = 0x00000000;
-    SYSKEY = 0xAA996655;
-    SYSKEY = 0x556699AA;
-    RSWRSTSET = 1;
-    (void) RSWRST;
-    while (1);
-}
-
-
-/* timer interrupt function executes every millisecond ************************/
-#ifdef CO_RT_THREAD_ISR_DEFAULT
-CO_RT_THREAD_ISR() {
-    CO_timer_us += CO_RT_THREAD_INTERVAL_US;
-
-    /* Execute external application code */
-    app_peripheralRead(CO, CO_RT_THREAD_INTERVAL_US);
-
-    CO_RT_THREAD_ISR_FLAG = 0;
-
-    /* No need to CO_LOCK_OD(co->CANmodule); this is interrupt */
-    if (!CO->nodeIdUnconfigured && CO->CANmodule->CANnormal)
+    else
     {
-        bool_t syncWas = false;
-
-#if (CO_CONFIG_SYNC) & CO_CONFIG_SYNC_ENABLE
-        syncWas = CO_process_SYNC(CO, CO_RT_THREAD_INTERVAL_US, NULL);
-#endif
-#if (CO_CONFIG_PDO) & CO_CONFIG_RPDO_ENABLE
-        CO_process_RPDO(CO, syncWas, CO_RT_THREAD_INTERVAL_US, NULL);
-#endif
+#warning "CANOpen exit conditions is not ready yet!"
+    //    CO_RT_THREAD_ENABLE(0);
+        CO_CANRX_ENABLE(0);
 
         /* Execute external application code */
-        app_programRt(CO, CO_RT_THREAD_INTERVAL_US);
+        app_programEnd();
 
-#if (CO_CONFIG_PDO) & CO_CONFIG_TPDO_ENABLE
-        CO_process_TPDO(CO, syncWas, CO_RT_THREAD_INTERVAL_US, NULL);
-#endif
+    #if (CO_CONFIG_STORAGE) & CO_CONFIG_STORAGE_ENABLE
+        CO_storageEeprom_auto_process(&storage, true);
+    #endif
 
-        /* verify timer overflow */
-        if (CO_RT_THREAD_ISR_FLAG == 1) {
-            CO_errorReport(CO->em, CO_EM_ISR_TIMER_OVERFLOW,
-                           CO_EMC_SOFTWARE_INTERNAL, 0);
-            CO_RT_THREAD_ISR_FLAG = 0;
-        }
+        /* delete objects from memory */
+        CO_CANsetConfigurationMode(CO->CANmodule->CANptr);
+        CO_delete(CO);
 
-        (void) syncWas;
+        /* reset microcontroller */
+        SYSKEY = 0x00000000;
+        SYSKEY = 0xAA996655;
+        SYSKEY = 0x556699AA;
+        RSWRSTSET = 1;
+        (void) RSWRST;
+        while (1);
     }
-
-    /* Execute external application code */
-    app_peripheralWrite(CO, CO_RT_THREAD_INTERVAL_US);
-}
-#endif /* CO_RT_THREAD_ISR_DEFAULT */
-
-
-// 9.) Deletes the CAN interrupt function *****************************************************/
-#ifdef CO_CANRX_ISR_DEFAULT
-CO_CANRX_ISR() {
     
-    CO_CANinterrupt(CO->CANmodule);
-    /* Clear combined Interrupt flag */
-    CO_CANRX_ISR_FLAG = 0;
+    return (int)reset; // valid to notify errors/reset
 }
-#endif

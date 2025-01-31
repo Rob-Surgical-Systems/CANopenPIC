@@ -22,18 +22,24 @@
  * limitations under the License.
  */
 
+
+/** 
+ * Modified version, by EF.
+ * The LEDs are re-mapped:
+ * RUN_LED is set as LED_TESTDEV
+ * ERROR_LED is set as LED_ERROR although it may collide with current. TODO: another pin? or just a dummy variable?
+ */
+
 #include "CO_application.h"
 #include "OD.h"
 
+#include "device.h" // LEDs!
 
-/* CANopen LED diodes, as present on Explorer 16 and Max32 boards. */
-#define CAN_INIT_LEDS() TRISFbits.TRISF2 = TRISFbits.TRISF8 = 0
-#define CAN_RUN_LED     LATFbits.LATF2
-#define CAN_ERROR_LED   LATFbits.LATF8
-//static char dummy;
-//#define CAN_INIT_LEDS() TRISCbits.TRISC1 = 0 // TEST LED
-//#define CAN_RUN_LED     LATAbits.LATA2
-//#define CAN_ERROR_LED   dummy // whatever
+/* CANopen LED diodes, already initialized in DEV_Init(), renamed here for easier integration. */
+#define CAN_INIT_LEDS() _nop()
+#define CAN_RUN_LED     LED_TESTDEV_WR
+#define CAN_ERROR_LED   LED_ERROR_WR
+
 
 /******************************************************************************/
 CO_ReturnError_t app_programStart(uint16_t *bitRate,
@@ -41,16 +47,14 @@ CO_ReturnError_t app_programStart(uint16_t *bitRate,
                                   uint32_t *errInfo)
 {
     /* CANopen led diodes */
-    CAN_INIT_LEDS();
-    CAN_RUN_LED = 0;
-    CAN_ERROR_LED = 1;
+//    CAN_INIT_LEDS(); // Already done in device.h
+    CAN_RUN_LED     = 0;
+    CAN_ERROR_LED   = 1;
 
     /* Place for peripheral or any other startup configuration. See main_PIC32.c
      * for defaults. */
 
     /* Set initial CAN bitRate and CANopen nodeId. May be configured by LSS. */
-//    if (*bitRate == 0) *bitRate = 250;
-//    if (*nodeId == 0) *nodeId = 0x30;
     if (*bitRate == 0) *bitRate = 250;
     if (*nodeId == 0) *nodeId = 0x30;
 
@@ -60,6 +64,7 @@ CO_ReturnError_t app_programStart(uint16_t *bitRate,
 
 /******************************************************************************/
 void app_communicationReset(CO_t *co) {
+    
     if (!co->nodeIdUnconfigured) {
 
     }
@@ -91,23 +96,23 @@ void app_peripheralRead(CO_t *co, uint32_t timer1usDiff) {
 
     /* All analog inputs must be read or interrupt source for RT thread won't be
      * cleared. See analog input configuration in main_PIC32.c */
-    volatile uint32_t dummyRead;
-    dummyRead = ADC1BUF0;
-    dummyRead = ADC1BUF1;
-    dummyRead = ADC1BUF2;
-    dummyRead = ADC1BUF3;
-    dummyRead = ADC1BUF4;
-    dummyRead = ADC1BUF5;
-    dummyRead = ADC1BUF6;
-    dummyRead = ADC1BUF7;
-    dummyRead = ADC1BUF8;
-    dummyRead = ADC1BUF9;
-    dummyRead = ADC1BUFA;
-    dummyRead = ADC1BUFB;
-    dummyRead = ADC1BUFC;
-    dummyRead = ADC1BUFD;
-    dummyRead = ADC1BUFE;
-    dummyRead = ADC1BUFF;
+//    volatile uint32_t dummyRead;
+//    dummyRead = ADC1BUF0;
+//    dummyRead = ADC1BUF1;
+//    dummyRead = ADC1BUF2;
+//    dummyRead = ADC1BUF3;
+//    dummyRead = ADC1BUF4;
+//    dummyRead = ADC1BUF5;
+//    dummyRead = ADC1BUF6;
+//    dummyRead = ADC1BUF7;
+//    dummyRead = ADC1BUF8;
+//    dummyRead = ADC1BUF9;
+//    dummyRead = ADC1BUFA;
+//    dummyRead = ADC1BUFB;
+//    dummyRead = ADC1BUFC;
+//    dummyRead = ADC1BUFD;
+//    dummyRead = ADC1BUFE;
+//    dummyRead = ADC1BUFF;
     //OD_RAM.x6401_readAnalogInput_16_bit[0xF] = ADC1BUFF;
 
     /* Read digital inputs */
@@ -121,8 +126,8 @@ void app_peripheralRead(CO_t *co, uint32_t timer1usDiff) {
 
 /******************************************************************************/
 void app_peripheralWrite(CO_t *co, uint32_t timer1usDiff) {
-    CAN_RUN_LED = CO_LED_GREEN(co->LEDs, CO_LED_CANopen);
-    CAN_ERROR_LED = CO_LED_RED(co->LEDs, CO_LED_CANopen);
+    CAN_RUN_LED     = CO_LED_GREEN(co->LEDs, CO_LED_CANopen);
+    CAN_ERROR_LED   = CO_LED_RED(co->LEDs, CO_LED_CANopen);
 
     /* Write to digital outputs */
     //uint8_t digOut = OD_RAM.x6200_writeDigitalOutput_8_bit[0];

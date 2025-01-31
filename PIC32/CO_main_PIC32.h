@@ -24,6 +24,12 @@ int CO_Config();
 int CO_Update();
 
 
+// interrupts and similar methods...
+void CO_RT_THREAD_ISR();
+    
+void CO_RxInterrupt();
+
+
 #ifdef	__cplusplus
 }
 #endif
