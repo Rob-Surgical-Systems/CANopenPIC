@@ -63,12 +63,13 @@
 
 #ifndef CO_RT_THREAD_CONFIG
 #define CO_RT_THREAD_CONFIG() { \
-    T1CON = 0; \
-    TMR1 = 0; \
-    PR1 = CO_PBCLK - 1; \
-    T1CON = 0x8000; \
-    IFS0bits.T1IF = 0; \
-    IPC1bits.T1IP = 7; \
+    T1CON   = 0; \
+    TMR1    = 0; \
+    PR1     = 312U; \
+    T1CONSET        = 0x30; \
+    IFS0bits.T1IF   = 0; \
+    IPC1bits.T1IP   = 7; \
+    T1CONSET        = 0x8000; \
 }
 #endif
 
@@ -81,7 +82,8 @@
 ///* Default interrupt handler, twin, timer starts ADC conversion, then adc isr */
 #ifndef CO_RT_THREAD_ISR
 #define CO_RT_THREAD_ISR_DEFAULT
-//#define CO_RT_THREAD_ISR() void __ISR(_TIMER_1_VECTOR, IPL7SRS) Timer1Handlr(void) { \
+//#define CO_RT_THREAD_ISR() void __ISR(_TIMER_1_VECTOR, IPL7SRS) Timer1Handlr(void)
+//{ \
 //    IFS0bits.T1IF = 0; \
 //}
 #endif
@@ -89,6 +91,11 @@
 /* Enable interrupt, 0 or 1 */
 #ifndef CO_RT_THREAD_ENABLE
 #define CO_RT_THREAD_ENABLE(ENABLE) IEC0bits.T1IE = ENABLE
+#endif
+
+/* Interrupt flag bit, used inside _rtThread, T1 instead of ADC */
+#ifndef CO_RT_THREAD_ISR_FLAG
+#define CO_RT_THREAD_ISR_FLAG IFS0bits.T1IF
 #endif
 
 /* CAN receive interrupt definitions */
@@ -184,9 +191,11 @@ static bool_t LSScfgStoreCallback(void *object, uint8_t id, uint16_t bitRate) {
     return true;
 }
 
+
+
 // 8.) Main is renamed to CO_main
 // 8.1) It has only the Initialization stage logics
-int CO_Init () {
+int CO_Init ( ) {
     CO_ReturnError_t err;
     CO_NMT_reset_cmd_t reset = CO_RESET_NOT;
     bool_t firstRun = true;
@@ -241,7 +250,7 @@ int CO_Init () {
 
     /* Execute external application code */
     uint32_t errInfo_app_programStart = 0;
-#warning "Baud rate set to1Mbps!"
+#warning "Baud rate set to 1 [Mbps]!"
     mlStorage.pendingBitRate    = (uint16_t)1000U;
 #warning "Node ID set to 0x01!"
     mlStorage.pendingNodeId     = (uint8_t)0x01;
@@ -357,6 +366,7 @@ int CO_Init () {
         /* start CAN and enable interrupts */
         CO_CANsetNormalMode(CO->CANmodule);
 
+        CO_RT_THREAD_ENABLE(1);        
         CO_CANRX_ENABLE(1);
         reset = CO_RESET_NOT;
 //    } /* while(reset != CO_RESET_APP */
@@ -366,6 +376,7 @@ int CO_Init () {
 }
     
 
+
 int CO_Config ()
 {
     return (int)CO_ERROR_NO; // this one seems better fit
@@ -373,18 +384,16 @@ int CO_Config ()
 
 
 
-
-
-
 /* timer interrupt function executes every millisecond ************************/
 #ifdef CO_RT_THREAD_ISR_DEFAULT
-CO_RT_THREAD_ISR() {
+void CO_RT_THREAD_ISR() {
     CO_timer_us += CO_RT_THREAD_INTERVAL_US;
-
+//_LATC1 = !_LATC1;
     /* Execute external application code */
     app_peripheralRead(CO, CO_RT_THREAD_INTERVAL_US);
 
-//    CO_RT_THREAD_ISR_FLAG = 0;
+    CO_RT_THREAD_ISR_FLAG = 0; // probably deleted soon as it is already done in the TMR1 interrupt
+//        IFS0bits.T1IF = 0;
 
     /* No need to CO_LOCK_OD(co->CANmodule); this is interrupt */
     if (!CO->nodeIdUnconfigured && CO->CANmodule->CANnormal)
@@ -406,7 +415,7 @@ CO_RT_THREAD_ISR() {
 #endif
 
         /* verify timer overflow */
-#warning "errorReport service is temporally disabled"
+#warning "Error report service is temporally disabled"
 //        if (CO_RT_THREAD_ISR_FLAG == 1) {
 //            CO_errorReport(CO->em, CO_EM_ISR_TIMER_OVERFLOW,
 //                           CO_EMC_SOFTWARE_INTERNAL, 0);
@@ -435,8 +444,6 @@ CO_CANRX_ISR() {
 
 
 
-
-
 // 8.3.) Update stage
 #warning "New Update method, but SSL service may require to reuse some code, or all, of the Initialization stage"
 int CO_Update ()
@@ -446,7 +453,7 @@ int CO_Update ()
     
     if (reset == CO_RESET_NOT)
     {        
-        CO_RT_THREAD_ISR();
+//        CO_RT_THREAD_ISR(); // not!!
         
 /* loop for normal program execution ******************************************/
 
@@ -475,7 +482,7 @@ int CO_Update ()
 /* program exit ***************************************************************/
     else
     {
-#warning "CANOpen exit conditions is not ready yet!"
+#warning "CANOpen exit conditions are not ready yet!"
     //    CO_RT_THREAD_ENABLE(0);
         CO_CANRX_ENABLE(0);
 
