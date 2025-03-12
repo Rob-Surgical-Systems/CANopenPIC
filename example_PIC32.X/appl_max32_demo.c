@@ -25,9 +25,11 @@
 
 /** 
  * Modified version, by EF.
- * The LEDs are re-mapped:
+ * 1) The LEDs are re-mapped:
  * RUN_LED is set as LED_TESTDEV
  * ERROR_LED is set as LED_ERROR although it may collide with current. TODO: another pin? or just a dummy variable?
+ * 2) The NMT master minimal logics are ready, thus all Wx drives received the Operation mode command.
+ * 3) Some SDO are eventually sent, orderly, to each Wx driver, and the reply is parsed.
  */
 
 #include "CO_application.h"
@@ -41,7 +43,16 @@
 #define CAN_RUN_LED     LED_ERROR_WR
 #define CAN_ERROR_LED   LED_ERROR_WR
 
-
+enum SdoUploadFrame_t                       /// The SDO upload frames sent periodically to each Denali Wx driver.
+{
+    SDO_UPLOAD_BUS_VOLTAGE = 0,             ///< 0x2060.
+    SDO_UPLOAD_POWER_STAGE_TEMPERATURE,     ///< 0x2061.
+    SDO_UPLOAD_SYSTEM_LAST_ERROR,           ///< 0x5e49.
+    SDO_UPLOAD_STO_STATUS,                  ///< 0x251a.
+    SDO_UPLOAD_ERROR_TOTAL_NUMBER,          ///< 0x264d.
+    SDO_UPLOAD_TOTAL,                       ///< The total number of elements.
+};
+    
 /******************************************************************************/
 CO_ReturnError_t app_programStart(uint16_t *bitRate,
                                   uint8_t *nodeId,
@@ -82,15 +93,14 @@ void app_programEnd() {
 void app_programAsync(CO_t *co, uint32_t timer1usDiff) {
     /* Here can be slower code, all must be non-blocking. Mind race conditions
      * between this functions and following three functions, which all run from
-     * realtime timer interrupt */
-    
+     * realtime timer interrupt */    
    
-    // testing sending one message, e.g. NMT START to COB-ID 32
+    // 1. NMT START to each CAN ID
     static bool IsNmtOp = false;
-    static bool IsDenOperationModeSet = false;
+    
     if( false == IsNmtOp )
     {
-        static unsigned int count = 0U;
+        static unsigned int count = 0;
         
         if( 0U == count )
         {
@@ -101,7 +111,7 @@ void app_programAsync(CO_t *co, uint32_t timer1usDiff) {
             (void)CO_CANsend(co->NMT->HB_CANdevTx, co->NMT->HB_TXbuff);            
         }
         
-        else if( 1000U == count )
+        else if( 100U == count )
         {
             co->NMT->HB_TXbuff->CMSGSID = 0x00; // NMT COB-ID is 0x00 always!
             co->NMT->HB_TXbuff->CMSGEID = 0x02; // payload length is placed here
@@ -110,7 +120,7 @@ void app_programAsync(CO_t *co, uint32_t timer1usDiff) {
             (void)CO_CANsend(co->NMT->HB_CANdevTx, co->NMT->HB_TXbuff);            
         }
         
-        else if( 2000U == count )
+        else if( 200U == count )
         {
             co->NMT->HB_TXbuff->CMSGSID = 0x00; // NMT COB-ID is 0x00 always!
             co->NMT->HB_TXbuff->CMSGEID = 0x02; // payload length is placed here
@@ -119,7 +129,7 @@ void app_programAsync(CO_t *co, uint32_t timer1usDiff) {
             (void)CO_CANsend(co->NMT->HB_CANdevTx, co->NMT->HB_TXbuff);            
         }
         
-        else if( 3000U == count )
+        else if( 300U == count )
         {
             co->NMT->HB_TXbuff->CMSGSID = 0x00; // NMT COB-ID is 0x00 always!
             co->NMT->HB_TXbuff->CMSGEID = 0x02; // payload length is placed here
@@ -133,6 +143,124 @@ void app_programAsync(CO_t *co, uint32_t timer1usDiff) {
         else { } // good practice
         
         ++count;
+    }
+    
+    // 2. Simple FSM for SDO upload frames iteration, which are directly related to the EtherCAT PDI    
+    static enum SdoUploadFrame_t sdoFrame       = SDO_UPLOAD_BUS_VOLTAGE;   // current fsm frame
+    static enum SdoUploadFrame_t sdoFrameNext   = SDO_UPLOAD_BUS_VOLTAGE;   // next fsm frame
+    
+    const unsigned char DECIMATOR_MAX   = 20U;                       // 20 iterations @ 5 [ms] = 100 [ms] between messages
+    static unsigned char decimator      = 20U;                       // the first one should not be too early... after NMT at least...
+    // COB-ID for each Wx, all SDO uploads but not with the same payload lenght, index or subindex.
+    const unsigned short WX_CAN_ID_MAX  = 6U; // W6
+    const unsigned short WX_CAN_ID_MIN  = 3U; // W3 
+    static unsigned short wxId          = 3U;
+    
+    uint16_t idx        = 0x2060;           // default for SDO_UPLOAD_BUS_VOLTAGE SDO frame
+    uint8_t subidx      = 0x00;             // always zero...
+    
+    CO_SDO_abortCode_t  abortCode;
+    size_t              sizeTransferred;
+    CO_SDO_return_t     SDO_ret;
+    uint32_t            timeDiff_us = 1000U;
+    uint32_t            timeNext_us = 2000U;
+    
+    bool updateWxId = false;                // set to TRUE either via Rx message or timeout
+    static bool isSdoClientReady = false;   // true when setup/configured and initialized
+    
+    sdoFrame = sdoFrameNext; // update FSM
+        
+    if( --decimator < 1U )
+    {
+        decimator = DECIMATOR_MAX; // restart!
+
+        switch ( sdoFrame )
+        {
+            case SDO_UPLOAD_BUS_VOLTAGE:
+                idx         = 0x2060;                
+                break;
+                
+            case SDO_UPLOAD_POWER_STAGE_TEMPERATURE:                
+                idx         = 0x2061;                
+                break;
+
+            case SDO_UPLOAD_SYSTEM_LAST_ERROR:                
+                idx         = 0x5E49;                
+                break;
+                
+            case SDO_UPLOAD_STO_STATUS:                
+                idx         = 0x251A;                
+                break;
+
+            case SDO_UPLOAD_ERROR_TOTAL_NUMBER:                
+                idx         = 0x264D;                
+                break;
+            
+            case SDO_UPLOAD_TOTAL:
+            default:
+                sdoFrameNext = (enum SdoUploadFrame_t)(0); // safety!
+                return; // error!
+        }        
+                
+        /* setup client */
+        SDO_ret = CO_SDOclient_setup(co->SDOclient, (uint32_t)CO_CAN_ID_SDO_CLI + wxId, (uint32_t)CO_CAN_ID_SDO_SRV + wxId, wxId); // all the same value, it works ok
+        if (SDO_ret != CO_SDO_RT_ok_communicationEnd) {
+            return; // error!
+        }
+
+        /* initiate upload */
+        uint16_t timeout_ms = 100U;
+        SDO_ret = CO_SDOclientUploadInitiate(co->SDOclient, idx, subidx, timeout_ms, true);
+        if (SDO_ret != CO_SDO_RT_ok_communicationEnd) {
+            return; // error!
+        }
+        
+        else{
+            isSdoClientReady = true;
+        }            
+    }
+
+    // 2. Loops over Rx but only if SDO client 
+    if( true == isSdoClientReady )
+    {
+        SDO_ret = CO_SDOclientUpload(co->SDOclient, timeDiff_us, false, &abortCode, NULL, &sizeTransferred, &timeNext_us);                 // non-blocking
+
+        if (SDO_ret < CO_SDO_RT_ok_communicationEnd) {
+            updateWxId = true; // error
+        }
+        /* Response data must be read, partially or whole */
+        else if ((SDO_ret == CO_SDO_RT_uploadDataBufferFull) || (SDO_ret == CO_SDO_RT_ok_communicationEnd)) {
+
+            // Parsing! hence, ready via EtherCAT too!
+            uint16_t rxIdx      = co->SDOclient->CANrxData[1];          // LSB
+            rxIdx               |= (co->SDOclient->CANrxData[2] << 8);  // MSB
+            uint8_t rxSubIdx    = co->SDOclient->CANrxData[3];
+
+            app_sdoCustomParsing( wxId, rxIdx, rxSubIdx, &co->SDOclient->CANrxData[4] );
+            updateWxId = true;
+        }
+
+        else // still waiting?
+        {
+            static unsigned char timeout = 0xFF;
+            if ( 0 == --timeout ){
+                updateWxId = true; // timeout error!
+            }
+        }
+
+        // 3. Updates Wx ID and messages ID (FSM)
+        if( true == updateWxId )
+        {
+            isSdoClientReady = false; // reset
+
+            if(++wxId > WX_CAN_ID_MAX) // next Wx!
+            {
+                wxId = WX_CAN_ID_MIN;
+                sdoFrameNext = ++sdoFrame;
+                if( sdoFrameNext >= SDO_UPLOAD_TOTAL) // avoid these!
+                    sdoFrameNext = 0; // reset
+            }
+        }
     }
 }
 
@@ -211,4 +339,147 @@ void app_peripheralWrite(CO_t *co, uint32_t timer1usDiff) {
     //LATAbits.LATA5 = (digOut & 0x20) ? 1 : 0;
     //LATAbits.LATA6 = (digOut & 0x40) ? 1 : 0;
     //LATAbits.LATA7 = (digOut & 0x80) ? 1 : 0;
+}
+
+
+int app_sdoCustomParsing( unsigned short Wx, unsigned short Index, unsigned char SubIndex, uint8_t* Buff )
+{
+    switch ( Index )
+    {
+        case ( 0x2060 ): // BUS_VOLTAGE
+            
+            switch ( Wx )
+            {
+                case ( 3U ):
+                    memcpy( &OD_PERSIST_COMM.x2000_W3DenaliOutputs.busVoltageValue, Buff, sizeof(OD_PERSIST_COMM.x2000_W3DenaliOutputs.busVoltageValue) );
+                    break;
+                    
+                case ( 4U ):
+                    memcpy( &OD_PERSIST_COMM.x2002_W4DenaliOutputs.busVoltageValue, Buff, sizeof(OD_PERSIST_COMM.x2002_W4DenaliOutputs.busVoltageValue) );
+                    break;
+                    
+                case ( 5U ):
+                    memcpy( &OD_PERSIST_COMM.x2004_W5DenaliOutputs.busVoltageValue, Buff, sizeof(OD_PERSIST_COMM.x2004_W5DenaliOutputs.busVoltageValue) );
+                    break;
+                    
+                case ( 6U ):
+                    memcpy( &OD_PERSIST_COMM.x2006_W6DenaliOutputs.busVoltageValue, Buff, sizeof(OD_PERSIST_COMM.x2006_W6DenaliOutputs.busVoltageValue) );
+                    break;
+                    
+                default:
+                    return 1; // error
+            }            
+            
+            break;
+            
+        case ( 0x2061 ): // POWER_STAGE_TEMPERATURE
+            
+            switch ( Wx )
+            {
+                case ( 3U ):
+                    memcpy( &OD_PERSIST_COMM.x2000_W3DenaliOutputs.powerStageTemperature1Value, Buff, sizeof(OD_PERSIST_COMM.x2000_W3DenaliOutputs.powerStageTemperature1Value) );
+                    break;
+                    
+                case ( 4U ):
+                    memcpy( &OD_PERSIST_COMM.x2002_W4DenaliOutputs.powerStageTemperature1Value, Buff, sizeof(OD_PERSIST_COMM.x2002_W4DenaliOutputs.powerStageTemperature1Value) );
+                    break;
+                    
+                case ( 5U ):
+                    memcpy( &OD_PERSIST_COMM.x2004_W5DenaliOutputs.powerStageTemperature1Value, Buff, sizeof(OD_PERSIST_COMM.x2004_W5DenaliOutputs.powerStageTemperature1Value) );
+                    break;
+                    
+                case ( 6U ):
+                    memcpy( &OD_PERSIST_COMM.x2006_W6DenaliOutputs.powerStageTemperature1Value, Buff, sizeof(OD_PERSIST_COMM.x2006_W6DenaliOutputs.powerStageTemperature1Value) );
+                    break;
+                    
+                default:
+                    return 1; // error
+            }            
+            
+            break;
+            
+        case ( 0x5E49 ): // SYSTEM_LAST_ERROR
+            
+            switch ( Wx )
+            {
+                case ( 3U ):
+                    memcpy( &OD_PERSIST_COMM.x2000_W3DenaliOutputs.systemLastError, Buff, sizeof(OD_PERSIST_COMM.x2000_W3DenaliOutputs.systemLastError) );
+                    break;
+                    
+                case ( 4U ):
+                    memcpy( &OD_PERSIST_COMM.x2002_W4DenaliOutputs.systemLastError, Buff, sizeof(OD_PERSIST_COMM.x2002_W4DenaliOutputs.systemLastError) );
+                    break;
+                    
+                case ( 5U ):
+                    memcpy( &OD_PERSIST_COMM.x2004_W5DenaliOutputs.systemLastError, Buff, sizeof(OD_PERSIST_COMM.x2004_W5DenaliOutputs.systemLastError) );
+                    break;
+                    
+                case ( 6U ):
+                    memcpy( &OD_PERSIST_COMM.x2006_W6DenaliOutputs.systemLastError, Buff, sizeof(OD_PERSIST_COMM.x2006_W6DenaliOutputs.systemLastError) );
+                    break;
+                    
+                default:
+                    return 1; // error
+            }            
+            
+            break;            
+            
+        case ( 0x251A ): // STO_STATUS
+            
+            switch ( Wx )
+            {
+                case ( 3U ):
+                    memcpy( &OD_PERSIST_COMM.x2000_W3DenaliOutputs.STOStatus, Buff, sizeof(OD_PERSIST_COMM.x2000_W3DenaliOutputs.STOStatus) );
+                    break;
+                    
+                case ( 4U ):
+                    memcpy( &OD_PERSIST_COMM.x2002_W4DenaliOutputs.STOStatus, Buff, sizeof(OD_PERSIST_COMM.x2002_W4DenaliOutputs.STOStatus) );
+                    break;
+                    
+                case ( 5U ):
+                    memcpy( &OD_PERSIST_COMM.x2004_W5DenaliOutputs.STOStatus, Buff, sizeof(OD_PERSIST_COMM.x2004_W5DenaliOutputs.STOStatus) );
+                    break;
+                    
+                case ( 6U ):
+                    memcpy( &OD_PERSIST_COMM.x2006_W6DenaliOutputs.STOStatus, Buff, sizeof(OD_PERSIST_COMM.x2006_W6DenaliOutputs.STOStatus) );
+                    break;
+                    
+                default:
+                    return 1; // error
+            }            
+            
+            break;
+            
+
+        case ( 0x264D ): // ERROR_TOTAL_NUMBER
+            
+            switch ( Wx )
+            {
+                case ( 3U ):
+                    memcpy( &OD_PERSIST_COMM.x2000_W3DenaliOutputs.systemErrorTotalNumber, Buff, sizeof(OD_PERSIST_COMM.x2000_W3DenaliOutputs.systemErrorTotalNumber) );
+                    break;
+                    
+                case ( 4U ):
+                    memcpy( &OD_PERSIST_COMM.x2002_W4DenaliOutputs.systemErrorTotalNumber, Buff, sizeof(OD_PERSIST_COMM.x2002_W4DenaliOutputs.systemErrorTotalNumber) );
+                    break;
+                    
+                case ( 5U ):
+                    memcpy( &OD_PERSIST_COMM.x2004_W5DenaliOutputs.systemErrorTotalNumber, Buff, sizeof(OD_PERSIST_COMM.x2004_W5DenaliOutputs.systemErrorTotalNumber) );
+                    break;
+                    
+                case ( 6U ):
+                    memcpy( &OD_PERSIST_COMM.x2006_W6DenaliOutputs.systemErrorTotalNumber, Buff, sizeof(OD_PERSIST_COMM.x2006_W6DenaliOutputs.systemErrorTotalNumber) );
+                    break;
+                    
+                default:
+                    return 1; // error
+            }
+            
+            break;
+            
+        default: // unknown index?
+            return 1;
+    }
+    
+    return 0; // Ok!
 }
