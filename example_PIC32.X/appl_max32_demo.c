@@ -102,7 +102,7 @@ void app_programAsync(CO_t *co, uint32_t timer1usDiff) {
     {
         static unsigned int count = 0;
         
-        if( 0U == count )
+        if( 20000U == count )
         {
             co->NMT->HB_TXbuff->CMSGSID = 0x00; // NMT COB-ID is 0x00 always!
             co->NMT->HB_TXbuff->CMSGEID = 0x02; // payload length is placed here
@@ -111,7 +111,7 @@ void app_programAsync(CO_t *co, uint32_t timer1usDiff) {
             (void)CO_CANsend(co->NMT->HB_CANdevTx, co->NMT->HB_TXbuff);            
         }
         
-        else if( 100U == count )
+        else if( 20100U == count )
         {
             co->NMT->HB_TXbuff->CMSGSID = 0x00; // NMT COB-ID is 0x00 always!
             co->NMT->HB_TXbuff->CMSGEID = 0x02; // payload length is placed here
@@ -120,7 +120,7 @@ void app_programAsync(CO_t *co, uint32_t timer1usDiff) {
             (void)CO_CANsend(co->NMT->HB_CANdevTx, co->NMT->HB_TXbuff);            
         }
         
-        else if( 200U == count )
+        else if( 20200U == count )
         {
             co->NMT->HB_TXbuff->CMSGSID = 0x00; // NMT COB-ID is 0x00 always!
             co->NMT->HB_TXbuff->CMSGEID = 0x02; // payload length is placed here
@@ -129,7 +129,7 @@ void app_programAsync(CO_t *co, uint32_t timer1usDiff) {
             (void)CO_CANsend(co->NMT->HB_CANdevTx, co->NMT->HB_TXbuff);            
         }
         
-        else if( 300U == count )
+        else if( 20300U == count )
         {
             co->NMT->HB_TXbuff->CMSGSID = 0x00; // NMT COB-ID is 0x00 always!
             co->NMT->HB_TXbuff->CMSGEID = 0x02; // payload length is placed here
@@ -145,120 +145,125 @@ void app_programAsync(CO_t *co, uint32_t timer1usDiff) {
         ++count;
     }
     
-    // 2. Simple FSM for SDO upload frames iteration, which are directly related to the EtherCAT PDI    
-    static enum SdoUploadFrame_t sdoFrame       = SDO_UPLOAD_BUS_VOLTAGE;   // current fsm frame
-    static enum SdoUploadFrame_t sdoFrameNext   = SDO_UPLOAD_BUS_VOLTAGE;   // next fsm frame
-    
-    const unsigned char DECIMATOR_MAX   = 20U;                       // 20 iterations @ 5 [ms] = 100 [ms] between messages
-    static unsigned char decimator      = 20U;                       // the first one should not be too early... after NMT at least...
-    // COB-ID for each Wx, all SDO uploads but not with the same payload lenght, index or subindex.
-    const unsigned short WX_CAN_ID_MAX  = 6U; // W6
-    const unsigned short WX_CAN_ID_MIN  = 3U; // W3 
-    static unsigned short wxId          = 3U;
-    
-    uint16_t idx        = 0x2060;           // default for SDO_UPLOAD_BUS_VOLTAGE SDO frame
-    uint8_t subidx      = 0x00;             // always zero...
-    
-    CO_SDO_abortCode_t  abortCode;
-    size_t              sizeTransferred;
-    CO_SDO_return_t     SDO_ret;
-    uint32_t            timeDiff_us = 1000U;
-    uint32_t            timeNext_us = 2000U;
-    
-    bool updateWxId = false;                // set to TRUE either via Rx message or timeout
-    static bool isSdoClientReady = false;   // true when setup/configured and initialized
-    
-    sdoFrame = sdoFrameNext; // update FSM
-        
-    if( --decimator < 1U )
+    else // 2. Cyclic SDO - Simple FSM for SDO upload frames iteration, which are directly related to the EtherCAT PDI
     {
-        decimator = DECIMATOR_MAX; // restart!
+        static enum SdoUploadFrame_t sdoFrame       = SDO_UPLOAD_BUS_VOLTAGE;   // current fsm frame
+        static enum SdoUploadFrame_t sdoFrameNext   = SDO_UPLOAD_BUS_VOLTAGE;   // next fsm frame
 
-        switch ( sdoFrame )
+        const unsigned char DECIMATOR_MAX   = 20U;                       // 20 iterations @ 5 [ms] = 100 [ms] between messages
+        static unsigned char decimator      = 20U;                       // the first one should not be too early... after NMT at least...
+        // COB-ID for each Wx, all SDO uploads but not with the same payload lenght, index or subindex.
+        const unsigned short WX_CAN_ID_MAX  = 6U; // W6
+        const unsigned short WX_CAN_ID_MIN  = 3U; // W3 
+        static unsigned short wxId          = 3U;
+
+        uint16_t idx        = 0x2060;           // default for SDO_UPLOAD_BUS_VOLTAGE SDO frame
+        uint8_t subidx      = 0x00;             // always zero...
+
+        CO_SDO_abortCode_t  abortCode;
+        size_t              sizeTransferred;
+        CO_SDO_return_t     SDO_ret;
+        uint32_t            timeDiff_us = 1000U;
+        uint32_t            timeNext_us = 2000U;
+
+        bool updateWxId = false;                // set to TRUE either via Rx message or timeout
+        static bool isSdoClientReady = false;   // true when setup/configured and initialized
+
+        sdoFrame = sdoFrameNext; // updates FSM
+
+        if( --decimator < 1U ) // 2.1.
         {
-            case SDO_UPLOAD_BUS_VOLTAGE:
-                idx         = 0x2060;                
-                break;
-                
-            case SDO_UPLOAD_POWER_STAGE_TEMPERATURE:                
-                idx         = 0x2061;                
-                break;
+            decimator = DECIMATOR_MAX; // restart!
 
-            case SDO_UPLOAD_SYSTEM_LAST_ERROR:                
-                idx         = 0x5E49;                
-                break;
-                
-            case SDO_UPLOAD_STO_STATUS:                
-                idx         = 0x251A;                
-                break;
-
-            case SDO_UPLOAD_ERROR_TOTAL_NUMBER:                
-                idx         = 0x264D;                
-                break;
-            
-            case SDO_UPLOAD_TOTAL:
-            default:
-                sdoFrameNext = (enum SdoUploadFrame_t)(0); // safety!
-                return; // error!
-        }        
-                
-        /* setup client */
-        SDO_ret = CO_SDOclient_setup(co->SDOclient, (uint32_t)CO_CAN_ID_SDO_CLI + wxId, (uint32_t)CO_CAN_ID_SDO_SRV + wxId, wxId); // all the same value, it works ok
-        if (SDO_ret != CO_SDO_RT_ok_communicationEnd) {
-            return; // error!
-        }
-
-        /* initiate upload */
-        uint16_t timeout_ms = 100U;
-        SDO_ret = CO_SDOclientUploadInitiate(co->SDOclient, idx, subidx, timeout_ms, true);
-        if (SDO_ret != CO_SDO_RT_ok_communicationEnd) {
-            return; // error!
-        }
-        
-        else{
-            isSdoClientReady = true;
-        }            
-    }
-
-    // 2. Loops over Rx but only if SDO client 
-    if( true == isSdoClientReady )
-    {
-        SDO_ret = CO_SDOclientUpload(co->SDOclient, timeDiff_us, false, &abortCode, NULL, &sizeTransferred, &timeNext_us);                 // non-blocking
-
-        if (SDO_ret < CO_SDO_RT_ok_communicationEnd) {
-            updateWxId = true; // error
-        }
-        /* Response data must be read, partially or whole */
-        else if ((SDO_ret == CO_SDO_RT_uploadDataBufferFull) || (SDO_ret == CO_SDO_RT_ok_communicationEnd)) {
-
-            // Parsing! hence, ready via EtherCAT too!
-            uint16_t rxIdx      = co->SDOclient->CANrxData[1];          // LSB
-            rxIdx               |= (co->SDOclient->CANrxData[2] << 8);  // MSB
-            uint8_t rxSubIdx    = co->SDOclient->CANrxData[3];
-
-            app_sdoCustomParsing( wxId, rxIdx, rxSubIdx, &co->SDOclient->CANrxData[4] );
-            updateWxId = true;
-        }
-
-        else // still waiting?
-        {
-            static unsigned char timeout = 0xFF;
-            if ( 0 == --timeout ){
-                updateWxId = true; // timeout error!
-            }
-        }
-
-        // 3. Updates Wx ID and messages ID (FSM)
-        if( true == updateWxId )
-        {
-            isSdoClientReady = false; // reset
-
-            if(++wxId > WX_CAN_ID_MAX) // next Wx!
+            switch ( sdoFrame )
             {
-                wxId = WX_CAN_ID_MIN;
-                sdoFrameNext = ++sdoFrame;
-                if( sdoFrameNext >= SDO_UPLOAD_TOTAL) // avoid these!
-                    sdoFrameNext = 0; // reset
+                case SDO_UPLOAD_BUS_VOLTAGE:
+                    idx         = 0x2060;                
+                    break;
+
+                case SDO_UPLOAD_POWER_STAGE_TEMPERATURE:                
+                    idx         = 0x2061;                
+                    break;
+
+                case SDO_UPLOAD_SYSTEM_LAST_ERROR:                
+                    idx         = 0x5E49;                
+                    break;
+
+                case SDO_UPLOAD_STO_STATUS:                
+                    idx         = 0x251A;                
+                    break;
+
+                case SDO_UPLOAD_ERROR_TOTAL_NUMBER:                
+                    idx         = 0x264D;                
+                    break;
+
+                case SDO_UPLOAD_TOTAL:
+                default:
+                    sdoFrameNext = (enum SdoUploadFrame_t)(0); // safety!
+                    return; // error!
+            }
+            
+            /* setup client */
+            SDO_ret = CO_SDOclient_setup(co->SDOclient, (uint32_t)CO_CAN_ID_SDO_CLI + wxId, (uint32_t)CO_CAN_ID_SDO_SRV + wxId, wxId); // all the same value, it works ok
+            if (SDO_ret != CO_SDO_RT_ok_communicationEnd) {
+                return; // error!
+            }
+
+            /* initiate upload */
+            uint16_t timeout_ms = 100U;
+            SDO_ret = CO_SDOclientUploadInitiate(co->SDOclient, idx, subidx, timeout_ms, true);
+            if (SDO_ret != CO_SDO_RT_ok_communicationEnd) {
+                return; // error!
+            }
+
+            else{
+                isSdoClientReady = true;
+            }            
+        }
+
+        // 2.2. Loops over Rx but only if SDO client is ready
+        if( true == isSdoClientReady )
+        {
+            SDO_ret = CO_SDOclientUpload(co->SDOclient, timeDiff_us, false, &abortCode, NULL, &sizeTransferred, &timeNext_us);                 // non-blocking
+
+            if (SDO_ret < CO_SDO_RT_ok_communicationEnd) {
+                updateWxId = true; // error
+            }
+            /* Response data must be read, partially or whole */
+            else if ((SDO_ret == CO_SDO_RT_uploadDataBufferFull) || (SDO_ret == CO_SDO_RT_ok_communicationEnd)) {
+
+                // Parsing! hence, ready via EtherCAT too!
+                uint16_t rxIdx      = co->SDOclient->CANrxData[1];          // LSB
+                rxIdx               |= (co->SDOclient->CANrxData[2] << 8);  // MSB
+                uint8_t rxSubIdx    = co->SDOclient->CANrxData[3];
+
+                app_sdoCustomParsing( wxId, rxIdx, rxSubIdx, &co->SDOclient->CANrxData[4] );
+                updateWxId = true;
+
+                // Function must be called after finish of each SDO client communication cycle
+                CO_SDOclientClose(co->SDOclient);
+            }
+
+            else // still waiting?
+            {
+                static unsigned char timeout = 0xFF;
+                if ( 0 == --timeout ){
+                    updateWxId = true; // timeout error!
+                }
+            }
+
+            // 3. Updates Wx ID and messages ID (FSM)
+            if( true == updateWxId )
+            {
+                isSdoClientReady = false; // reset
+
+                if(++wxId > WX_CAN_ID_MAX) // next Wx!
+                {
+                    wxId = WX_CAN_ID_MIN;
+                    sdoFrameNext = ++sdoFrame;
+                    if( sdoFrameNext >= SDO_UPLOAD_TOTAL) // avoid these!
+                        sdoFrameNext = 0; // reset
+                }
             }
         }
     }
