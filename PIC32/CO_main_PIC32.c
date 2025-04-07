@@ -33,8 +33,8 @@
  * COB-ID set to 0x01.
  * 
  * In appl_max32_demo.c the LEDs are remapped:
- * RUN_LED is set as LED_TESTDEV
- * ERROR_LED is set as LED_ERROR although it may collide with current. TODO: another pin? or just a dummy variable?
+ * RUN_LED is set as LED_ERROR, so it collides with this LED LED functionality.
+ * ERROR_LED is set as LED_ERROR, so it collides with this LED LED functionality.
  */
 
 // 0) Comment unnecessary includes to simplify the project, thus, easier to fix issues
@@ -388,7 +388,7 @@ int CO_Config ()
 #ifdef CO_RT_THREAD_ISR_DEFAULT
 void CO_RT_THREAD_ISR() {
     CO_timer_us += CO_RT_THREAD_INTERVAL_US;
-//_LATC1 = !_LATC1;
+
     /* Execute external application code */
     app_peripheralRead(CO, CO_RT_THREAD_INTERVAL_US);
 
@@ -449,7 +449,7 @@ CO_CANRX_ISR() {
 int CO_Update ()
 {
     static CO_NMT_reset_cmd_t reset = CO_RESET_NOT;
-    uint32_t CO_timer_us_previous = 0;
+    static uint32_t CO_timer_us_previous = 0;           // do not forget it must be static!!! Otherwise, cycletime will grow forever.
     
     if (reset == CO_RESET_NOT)
     {        

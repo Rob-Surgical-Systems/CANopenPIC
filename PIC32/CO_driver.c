@@ -588,6 +588,7 @@ CO_ReturnError_t CO_CANsend(CO_CANmodule_t *CANmodule, CO_CANtx_t *buffer){
         if(!CANmodule->firstCANtxMessage){
             /* don't set error, if bootup message is still on buffers */
             CANmodule->CANerrorStatus |= CO_CAN_ERRTX_OVERFLOW;
+            _LATC1 = 1U;
         }
         err = CO_ERROR_TX_OVERFLOW;
     }

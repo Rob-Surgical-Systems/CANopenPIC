@@ -26,8 +26,8 @@
 /** 
  * Modified version, by EF.
  * 1) The LEDs are re-mapped:
- * RUN_LED is set as LED_TESTDEV
- * ERROR_LED is set as LED_ERROR although it may collide with current. TODO: another pin? or just a dummy variable?
+ * RUN_LED is set as LED_ERROR, so it collides with this LED LED functionality.
+ * ERROR_LED is set as LED_ERROR, so it collides with this LED LED functionality.
  * 2) The NMT master minimal logics are ready, thus all Wx drives received the Operation mode command.
  * 3) Some SDO are eventually sent, orderly, to each Wx driver, and the reply is parsed.
  */
@@ -143,15 +143,33 @@ void app_programAsync(CO_t *co, uint32_t timer1usDiff) {
         else { } // good practice
         
         ++count;
+        
+        return;
     }
     
-    else // 2. Cyclic SDO - Simple FSM for SDO upload frames iteration, which are directly related to the EtherCAT PDI
+    else
     {
+        // 1.1 NMT auto-recovery, this is the NMT master
+//        if ( ( CO_NMT_OPERATIONAL != co->NMT->operatingState ) && ( CO_NMT_OPERATIONAL == co->NMT->operatingStatePrev ) ) // it may fail if many consecutive "fails" happen
+        if ( CO_NMT_OPERATIONAL != co->NMT->operatingState ) // simplest, hotfix
+        {
+            CO_NMT_sendInternalCommand( co->NMT, CO_NMT_OPERATIONAL);
+        }
+        
+        // 1.2. Denali & CO3 recovery from EMCY - so simple, just a test!
+        if ( HIGH == _LATC1 )
+        {
+#warning "Maybe to redundant? it may help if a Denali losses its OP state?"
+            _LATC1 = LOW;
+            CO_NMT_sendCommand(co->NMT, CO_NMT_OPERATIONAL, 0); // to all, including itself
+        }
+
+        // 2. Cyclic SDO - Simple FSM for SDO upload frames iteration, which are directly related to the EtherCAT PDI
         static enum SdoUploadFrame_t sdoFrame       = SDO_UPLOAD_BUS_VOLTAGE;   // current fsm frame
         static enum SdoUploadFrame_t sdoFrameNext   = SDO_UPLOAD_BUS_VOLTAGE;   // next fsm frame
 
-        const unsigned char DECIMATOR_MAX   = 20U;                       // 20 iterations @ 5 [ms] = 100 [ms] between messages
-        static unsigned char decimator      = 20U;                       // the first one should not be too early... after NMT at least...
+        const unsigned char DECIMATOR_MAX   = 60U;                       // 60 iterations @ 5 [ms] = 300 [ms] between messages
+        static unsigned char decimator      = 60U;                       // the first one should not be too early... after NMT at least...
         // COB-ID for each Wx, all SDO uploads but not with the same payload lenght, index or subindex.
         const unsigned short WX_CAN_ID_MAX  = 6U; // W6
         const unsigned short WX_CAN_ID_MIN  = 3U; // W3 
@@ -171,7 +189,7 @@ void app_programAsync(CO_t *co, uint32_t timer1usDiff) {
 
         sdoFrame = sdoFrameNext; // updates FSM
 
-        if( --decimator < 1U ) // 2.1.
+        if ( ( false == isSdoClientReady ) && ( --decimator < 1U ) ) // 2.1., note decimator only evaluated&decremented if SDO client is not ready
         {
             decimator = DECIMATOR_MAX; // restart!
 
@@ -247,22 +265,21 @@ void app_programAsync(CO_t *co, uint32_t timer1usDiff) {
             else // still waiting?
             {
                 static unsigned char timeout = 0xFF;
-                if ( 0 == --timeout ){
+                if ( 0 == --timeout ){ // overflows automatically!
                     updateWxId = true; // timeout error!
                 }
             }
 
             // 3. Updates Wx ID and messages ID (FSM)
-            if( true == updateWxId )
+            if( true == updateWxId )        // note this is a local variable initialized to false always
             {
-                isSdoClientReady = false; // reset
+                isSdoClientReady = false;   // 3.1. Resets SDO client ready flag
 
-                if(++wxId > WX_CAN_ID_MAX) // next Wx!
+                if(++wxId > WX_CAN_ID_MAX)  // 3.2. Increments and checks Wx ID overflow!
                 {
                     wxId = WX_CAN_ID_MIN;
-                    sdoFrameNext = ++sdoFrame;
-                    if( sdoFrameNext >= SDO_UPLOAD_TOTAL) // avoid these!
-                        sdoFrameNext = 0; // reset
+                    if( ++sdoFrameNext >= SDO_UPLOAD_TOTAL)         // 3.3. Increments and checks SDO frame ID overflow
+                        sdoFrameNext = (enum SdoUploadFrame_t)(0);  // safest reset!
                 }
             }
         }
