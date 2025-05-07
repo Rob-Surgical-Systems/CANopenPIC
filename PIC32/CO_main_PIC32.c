@@ -192,6 +192,12 @@ static bool_t LSScfgStoreCallback(void *object, uint8_t id, uint16_t bitRate) {
 }
 
 
+/** 
+ * @brief Modified reset for PR03.
+ * @remark Not validated yet! 
+ */
+CO_NMT_reset_cmd_t CommReset ();
+
 
 // 8.) Main is renamed to CO_main
 // 8.1) It has only the Initialization stage logics
@@ -466,7 +472,7 @@ int CO_Update ()
 
         /* process CANopen objects */
         reset = CO_process(CO, false, timeDifference_us, NULL);
-
+#warning "detect RESET_COMM? dO WHAT?"
         CO_clearWDT();
 
         /* Execute external application code */
@@ -479,32 +485,136 @@ int CO_Update ()
 #endif
     }
 
-/* program exit ***************************************************************/
+/* program reset or exit ***************************************************************/
     else
     {
-#warning "CANOpen exit conditions are not ready yet!"
-    //    CO_RT_THREAD_ENABLE(0);
-        CO_CANRX_ENABLE(0);
+        if ( CO_RESET_COMM == reset )
+        {
+#warning "Testing a COMM RESET!"
+            reset = CommReset();
+        }
+        
+        else // exit app - it should never happen
+        {        
+        //    CO_RT_THREAD_ENABLE(0);
+            CO_CANRX_ENABLE(0);
 
-        /* Execute external application code */
-        app_programEnd();
+            /* Execute external application code */
+            app_programEnd();
 
-    #if (CO_CONFIG_STORAGE) & CO_CONFIG_STORAGE_ENABLE
-        CO_storageEeprom_auto_process(&storage, true);
-    #endif
+        #if (CO_CONFIG_STORAGE) & CO_CONFIG_STORAGE_ENABLE
+            CO_storageEeprom_auto_process(&storage, true);
+        #endif
 
-        /* delete objects from memory */
-        CO_CANsetConfigurationMode(CO->CANmodule->CANptr);
-        CO_delete(CO);
+            /* delete objects from memory */
+            CO_CANsetConfigurationMode(CO->CANmodule->CANptr);
+            CO_delete(CO);
 
-        /* reset microcontroller */
-        SYSKEY = 0x00000000;
-        SYSKEY = 0xAA996655;
-        SYSKEY = 0x556699AA;
-        RSWRSTSET = 1;
-        (void) RSWRST;
-        while (1);
+            /* reset microcontroller */
+            SYSKEY = 0x00000000;
+            SYSKEY = 0xAA996655;
+            SYSKEY = 0x556699AA;
+            RSWRSTSET = 1;
+            (void) RSWRST;
+            while (1);
+        }
     }
     
     return (int)reset; // valid to notify errors/reset
+}
+
+
+
+// COMM_RESET
+CO_NMT_reset_cmd_t CommReset ()
+//    while (reset != CO_RESET_APP) {
+{
+/* CANopen communication reset - initialize CANopen objects *******************/
+    uint32_t errInfo;
+
+    /* disable CAN receive interrupts */
+    CO_CANRX_ENABLE(0);
+
+    /* initialize CANopen */
+    CO_ReturnError_t err = CO_CANinit(CO, (void *)_CAN1_BASE_ADDRESS,
+                     mlStorage.pendingBitRate);
+    if (err != CO_ERROR_NO) {
+        while (1) CO_clearWDT();
+    }
+
+    CO_LSS_address_t lssAddress = {.identity = {
+        .vendorID = OD_PERSIST_COMM.x1018_identity.vendor_ID,
+        .productCode = OD_PERSIST_COMM.x1018_identity.productCode,
+        .revisionNumber = OD_PERSIST_COMM.x1018_identity.revisionNumber,
+        .serialNumber = OD_PERSIST_COMM.x1018_identity.serialNumber
+    }};
+    err = CO_LSSinit(CO, &lssAddress,
+                     &mlStorage.pendingNodeId, &mlStorage.pendingBitRate);
+    if (err != CO_ERROR_NO) {
+        while (1) CO_clearWDT();
+    }
+
+    CO_activeNodeId = mlStorage.pendingNodeId;
+    errInfo = 0;
+
+    err = CO_CANopenInit(CO,                /* CANopen object */
+                         NULL,              /* alternate NMT */
+                         NULL,              /* alternate em */
+                         OD,                /* Object dictionary */
+                         OD_STATUS_BITS,    /* Optional OD_statusBits */
+                         NMT_CONTROL,       /* CO_NMT_control_t */
+                         FIRST_HB_TIME,     /* firstHBTime_ms */
+                         SDO_SRV_TIMEOUT_TIME, /* SDOserverTimeoutTime_ms */
+                         SDO_CLI_TIMEOUT_TIME, /* SDOclientTimeoutTime_ms */
+                         SDO_CLI_BLOCK,     /* SDOclientBlockTransfer */
+                         CO_activeNodeId,
+                         &errInfo);
+    if (err != CO_ERROR_NO && err != CO_ERROR_NODE_ID_UNCONFIGURED_LSS) {
+        while (1) CO_clearWDT();
+    }
+
+    /* Execute external application code */
+    uint32_t errInfo_app_programStart = 0;
+
+    /* Emergency messages in case of errors */
+    if (!CO->nodeIdUnconfigured) {
+        if (errInfo == 0) errInfo = errInfo_app_programStart;
+        if (errInfo != 0) {
+            CO_errorReport(CO->em, CO_EM_INCONSISTENT_OBJECT_DICT,
+                           CO_EMC_DATA_SET, errInfo);
+        }
+#if (CO_CONFIG_STORAGE) & CO_CONFIG_STORAGE_ENABLE
+        if (storageInitError != 0) {
+            CO_errorReport(CO->em, CO_EM_NON_VOLATILE_MEMORY,
+                           CO_EMC_HARDWARE, storageInitError);
+        }
+#endif
+    }
+
+    /* initialize callbacks */
+    CO_LSSslave_initCkBitRateCall(CO->LSSslave, NULL, CO_LSSchkBitrateCallback);
+    CO_LSSslave_initCfgStoreCall(CO->LSSslave, &mlStorage, LSScfgStoreCallback);
+
+    /* Execute external application code */
+    app_communicationReset(CO);
+
+    errInfo = 0;
+    err = CO_CANopenInitPDO(CO,             /* CANopen object */
+                            CO->em,         /* emergency object */
+                            OD,             /* Object dictionary */
+                            CO_activeNodeId,
+                            &errInfo);
+    if (err != CO_ERROR_NO && err != CO_ERROR_NODE_ID_UNCONFIGURED_LSS) {
+        while (1) CO_clearWDT();
+    }
+
+
+    /* start CAN and enable interrupts */
+    CO_CANsetNormalMode(CO->CANmodule);
+
+    CO_RT_THREAD_ENABLE(1);        
+    CO_CANRX_ENABLE(1);
+    
+    return CO_RESET_NOT;
+//    } /* while(reset != CO_RESET_APP */
 }

@@ -104,38 +104,22 @@ void app_programAsync(CO_t *co, uint32_t timer1usDiff) {
         
         if( 20000U == count )
         {
-            co->NMT->HB_TXbuff->CMSGSID = 0x00; // NMT COB-ID is 0x00 always!
-            co->NMT->HB_TXbuff->CMSGEID = 0x02; // payload length is placed here
-            co->NMT->HB_TXbuff->data[0] = (uint8_t)0x01; // Start remote node command
-            co->NMT->HB_TXbuff->data[1] = (uint8_t)0x03; // W4 Node ID
-            (void)CO_CANsend(co->NMT->HB_CANdevTx, co->NMT->HB_TXbuff);            
+            CO_NMT_sendCommand(co->NMT, CO_NMT_ENTER_OPERATIONAL, 0x03);    
         }
         
         else if( 20100U == count )
         {
-            co->NMT->HB_TXbuff->CMSGSID = 0x00; // NMT COB-ID is 0x00 always!
-            co->NMT->HB_TXbuff->CMSGEID = 0x02; // payload length is placed here
-            co->NMT->HB_TXbuff->data[0] = (uint8_t)0x01; // Start remote node command
-            co->NMT->HB_TXbuff->data[1] = (uint8_t)0x04; // W4 Node ID
-            (void)CO_CANsend(co->NMT->HB_CANdevTx, co->NMT->HB_TXbuff);            
+            CO_NMT_sendCommand(co->NMT, CO_NMT_ENTER_OPERATIONAL, 0x04);
         }
         
         else if( 20200U == count )
         {
-            co->NMT->HB_TXbuff->CMSGSID = 0x00; // NMT COB-ID is 0x00 always!
-            co->NMT->HB_TXbuff->CMSGEID = 0x02; // payload length is placed here
-            co->NMT->HB_TXbuff->data[0] = (uint8_t)0x01; // Start remote node command
-            co->NMT->HB_TXbuff->data[1] = (uint8_t)0x05; // W5 Node ID
-            (void)CO_CANsend(co->NMT->HB_CANdevTx, co->NMT->HB_TXbuff);            
+            CO_NMT_sendCommand(co->NMT, CO_NMT_ENTER_OPERATIONAL, 0x05);  
         }
         
         else if( 20300U == count )
         {
-            co->NMT->HB_TXbuff->CMSGSID = 0x00; // NMT COB-ID is 0x00 always!
-            co->NMT->HB_TXbuff->CMSGEID = 0x02; // payload length is placed here
-            co->NMT->HB_TXbuff->data[0] = (uint8_t)0x01; // Start remote node command
-            co->NMT->HB_TXbuff->data[1] = (uint8_t)0x06; // W6 Node ID
-            (void)CO_CANsend(co->NMT->HB_CANdevTx, co->NMT->HB_TXbuff);    
+            CO_NMT_sendCommand(co->NMT, CO_NMT_ENTER_OPERATIONAL, 0x06);
             
             IsNmtOp = true; // end
         }
@@ -156,14 +140,31 @@ void app_programAsync(CO_t *co, uint32_t timer1usDiff) {
             CO_NMT_sendInternalCommand( co->NMT, CO_NMT_OPERATIONAL);
         }
         
-        // 1.2. Denali & CO3 recovery from EMCY - so simple, just a test!
-        if ( HIGH == _LATC1 )
+        static bool isReset = false;
+        // 1.2. Denali & CO3 recovery from EMCY - so simple, just a test!        
+        
+        if ( true == isReset )
         {
-#warning "Maybe to redundant? it may help if a Denali losses its OP state?"
-            _LATC1 = LOW;
-            CO_NMT_sendCommand(co->NMT, CO_NMT_OPERATIONAL, 0); // to all, including itself
+            isReset = false;
+            CO_NMT_sendInternalCommand(co->NMT, CO_NMT_ENTER_OPERATIONAL);           // 1.2.1. second, recover to OP, just itself or...
+            CO_NMT_sendCommand(co->NMT, CO_NMT_ENTER_OPERATIONAL, 0);                 // to all nodes? including itself
         }
+        
+        if ( 0 != co->CANmodule->CANerrorStatus ) // checks flag bits - any        
+        {
+            co->CANmodule->CANerrorStatus = 0; // needed? wrong?
+            _LATC1 = !_LATC1;
+            CO_NMT_sendInternalCommand( co->NMT, CO_NMT_RESET_COMMUNICATION);           // 1.2.2. first, reset comms      
+//            CO_NMT_sendInternalCommand( co->NMT, CO_NMT_ENTER_OPERATIONAL);           // so what? other error scenarios...
+            isReset = true;
 
+//#warning "Maybe to redundant? it may help if a Denali losses its OP state?"       // next ones are old and wrong'
+//            if ( 0 != ( CO_CAN_ERRTX_OVERFLOW & co->CANmodule->CANerrorStatus ) )   // checks flag bit
+//                CO_NMT_sendCommand(co->NMT, CO_NMT_ENTER_OPERATIONAL, 0);                 // to all nodes, including itself
+//            else
+//                CO_NMT_sendInternalCommand( co->NMT, CO_NMT_ENTER_OPERATIONAL);           // so what? other error scenarios...
+        }
+        
         // 2. Cyclic SDO - Simple FSM for SDO upload frames iteration, which are directly related to the EtherCAT PDI
         static enum SdoUploadFrame_t sdoFrame       = SDO_UPLOAD_BUS_VOLTAGE;   // current fsm frame
         static enum SdoUploadFrame_t sdoFrameNext   = SDO_UPLOAD_BUS_VOLTAGE;   // next fsm frame
