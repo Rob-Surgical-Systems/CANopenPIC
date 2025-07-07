@@ -26,8 +26,8 @@
 /** 
  * Modified version, by EF.
  * 1) The LEDs are re-mapped:
- * RUN_LED is set as LED_ERROR, so it collides with this LED LED functionality.
- * ERROR_LED is set as LED_ERROR, so it collides with this LED LED functionality.
+ * RUN_LED is set as LED_ERROR, so it collides with this LED functionality.
+ * ERROR_LED is set as LED_ERROR, so it collides with this LED functionality.
  * 2) The NMT master minimal logics are ready, thus all Wx drives received the Operation mode command.
  * 3) Some SDO are eventually sent, orderly, to each Wx driver, and the reply is parsed.
  */
@@ -153,18 +153,11 @@ void app_programAsync(CO_t *co, uint32_t timer1usDiff) {
         if ( 0 != co->CANmodule->CANerrorStatus ) // checks flag bits - any        
         {
             co->CANmodule->CANerrorStatus = 0; // needed? wrong?
-            _LATC1 = !_LATC1;
-            CO_NMT_sendInternalCommand( co->NMT, CO_NMT_RESET_COMMUNICATION);           // 1.2.2. first, reset comms      
-//            CO_NMT_sendInternalCommand( co->NMT, CO_NMT_ENTER_OPERATIONAL);           // so what? other error scenarios...
-            isReset = true;
 
-//#warning "Maybe to redundant? it may help if a Denali losses its OP state?"       // next ones are old and wrong'
-//            if ( 0 != ( CO_CAN_ERRTX_OVERFLOW & co->CANmodule->CANerrorStatus ) )   // checks flag bit
-//                CO_NMT_sendCommand(co->NMT, CO_NMT_ENTER_OPERATIONAL, 0);                 // to all nodes, including itself
-//            else
-//                CO_NMT_sendInternalCommand( co->NMT, CO_NMT_ENTER_OPERATIONAL);           // so what? other error scenarios...
+            CO_NMT_sendInternalCommand( co->NMT, CO_NMT_RESET_COMMUNICATION);           // 1.2.2. first, reset comms      
+            isReset = true;
         }
-        
+                    
         // 2. Cyclic SDO - Simple FSM for SDO upload frames iteration, which are directly related to the EtherCAT PDI
         static enum SdoUploadFrame_t sdoFrame       = SDO_UPLOAD_BUS_VOLTAGE;   // current fsm frame
         static enum SdoUploadFrame_t sdoFrameNext   = SDO_UPLOAD_BUS_VOLTAGE;   // next fsm frame
