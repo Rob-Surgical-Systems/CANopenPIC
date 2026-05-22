@@ -112,4 +112,14 @@ void app_peripheralRead(CO_t *co, uint32_t timer1usDiff);
 void app_peripheralWrite(CO_t *co, uint32_t timer1usDiff);
 
 
+/**
+ * @brief SDO parsing demonstrator, just fast coding.
+ * @param Wx        The Wx joint ID.
+ * @param Index     The OD index.
+ * @param SubIndex  The OD subindex, not processed yet, thus fixed to 0.
+ * @param Buff      A pointer to the SDO payload byte, thus, from b[4] and up to b[8].
+ * @return          EXIT_SUCCESS(0) if Ok, EXIT_FAILURE (1) otherwise.
+ */
+int app_sdoCustomParsing( unsigned short Wx, unsigned short Index, unsigned char SubIndex, uint8_t* Buff );
+
 #endif /* CO_APPLICATION_H */

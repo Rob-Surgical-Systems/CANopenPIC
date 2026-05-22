@@ -63,12 +63,14 @@ extern "C" {
 
 /* default system clock configuration */
 #ifndef CO_FSYS
-#define CO_FSYS 64000 /* (8MHz Quartz used) */
+//#define CO_FSYS 64000 /* (8MHz Quartz used) */
+#define CO_FSYS 80000 /* (8MHz Quartz used) */
 #endif
 
 /* default peripheral bus clock configuration */
 #ifndef CO_PBCLK
 #define CO_PBCLK 32000
+//#define CO_PBCLK 64000 // CO_FSYS error!
 #endif
 
 
