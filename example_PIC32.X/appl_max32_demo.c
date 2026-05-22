@@ -25,9 +25,14 @@
 
 /** 
  * Modified version, by EF.
+ * PCB_E_CN_CO3_03 revA0:
+ * 1) The LEDs are re-named for easier integration in SOUP code.
+ * Old/Deprecated: PCB_E_CN_CO3_02_Ax
  * 1) The LEDs are re-mapped:
  * RUN_LED is set as LED_ERROR, so it collides with this LED functionality.
  * ERROR_LED is set as LED_ERROR, so it collides with this LED functionality.
+ * 
+ * Any:
  * 2) The NMT master minimal logics are ready, thus all Wx drives received the Operation mode command.
  * 3) Some SDO are eventually sent, orderly, to each Wx driver, and the reply is parsed.
  */
@@ -39,9 +44,13 @@
 
 /* CANopen LED diodes, already initialized in DEV_Init(), renamed here for easier integration. */
 #define CAN_INIT_LEDS() _nop()
-//#define CAN_RUN_LED     LED_TESTDEV_WR
+#ifdef PCB_E_CN_CO3_03
+#define CAN_RUN_LED     LED_CO_RUN_WR
+#define CAN_ERROR_LED   LED_CO_ERR_WR
+#else
 #define CAN_RUN_LED     LED_ERROR_WR
 #define CAN_ERROR_LED   LED_ERROR_WR
+#endif
 
 enum SdoUploadFrame_t                       /// The SDO upload frames sent periodically to each Denali Wx driver.
 {
