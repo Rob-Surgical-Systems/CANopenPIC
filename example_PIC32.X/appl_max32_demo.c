@@ -48,7 +48,7 @@
 #define CAN_RUN_LED     LED_CO_RUN_WR
 #define CAN_ERROR_LED   LED_CO_ERR_WR
 #else
-#define CAN_RUN_LED     LED_ERROR_WR
+#define CAN_RUN_LED     LED_TEST_WR
 #define CAN_ERROR_LED   LED_ERROR_WR
 #endif
 
@@ -104,189 +104,189 @@ void app_programAsync(CO_t *co, uint32_t timer1usDiff) {
      * between this functions and following three functions, which all run from
      * realtime timer interrupt */    
    
-    // 1. NMT START to each CAN ID
-    static bool IsNmtOp = false;
-    
-    if( false == IsNmtOp )
-    {
-        static unsigned int count = 0;
-        
-        if( 20000U == count )
-        {
-            CO_NMT_sendCommand(co->NMT, CO_NMT_ENTER_OPERATIONAL, 0x03);    
-        }
-        
-        else if( 20100U == count )
-        {
-            CO_NMT_sendCommand(co->NMT, CO_NMT_ENTER_OPERATIONAL, 0x04);
-        }
-        
-        else if( 20200U == count )
-        {
-            CO_NMT_sendCommand(co->NMT, CO_NMT_ENTER_OPERATIONAL, 0x05);  
-        }
-        
-        else if( 20300U == count )
-        {
-            CO_NMT_sendCommand(co->NMT, CO_NMT_ENTER_OPERATIONAL, 0x06);
-            
-            IsNmtOp = true; // end
-        }
-
-        else { } // good practice
-        
-        ++count;
-        
-        return;
-    }
-    
-    else
-    {
-        // 1.1 NMT auto-recovery, this is the NMT master
-//        if ( ( CO_NMT_OPERATIONAL != co->NMT->operatingState ) && ( CO_NMT_OPERATIONAL == co->NMT->operatingStatePrev ) ) // it may fail if many consecutive "fails" happen
-        if ( CO_NMT_OPERATIONAL != co->NMT->operatingState ) // simplest, hotfix
-        {
-            CO_NMT_sendInternalCommand( co->NMT, CO_NMT_OPERATIONAL);
-        }
-        
-        static bool isReset = false;
-        // 1.2. Denali & CO3 recovery from EMCY - so simple, just a test!        
-        
-        if ( true == isReset )
-        {
-            isReset = false;
-            CO_NMT_sendInternalCommand(co->NMT, CO_NMT_ENTER_OPERATIONAL);           // 1.2.1. second, recover to OP, just itself or...
-            CO_NMT_sendCommand(co->NMT, CO_NMT_ENTER_OPERATIONAL, 0);                 // to all nodes? including itself
-        }
-        
-        if ( 0 != co->CANmodule->CANerrorStatus ) // checks flag bits - any        
-        {
-            co->CANmodule->CANerrorStatus = 0; // needed? wrong?
-
-            CO_NMT_sendInternalCommand( co->NMT, CO_NMT_RESET_COMMUNICATION);           // 1.2.2. first, reset comms      
-            isReset = true;
-        }
-                    
-        // 2. Cyclic SDO - Simple FSM for SDO upload frames iteration, which are directly related to the EtherCAT PDI
-        static enum SdoUploadFrame_t sdoFrame       = SDO_UPLOAD_BUS_VOLTAGE;   // current fsm frame
-        static enum SdoUploadFrame_t sdoFrameNext   = SDO_UPLOAD_BUS_VOLTAGE;   // next fsm frame
-
-        const unsigned char DECIMATOR_MAX   = 60U;                       // 60 iterations @ 5 [ms] = 300 [ms] between messages
-        static unsigned char decimator      = 60U;                       // the first one should not be too early... after NMT at least...
-        // COB-ID for each Wx, all SDO uploads but not with the same payload lenght, index or subindex.
-        const unsigned short WX_CAN_ID_MAX  = 6U; // W6
-        const unsigned short WX_CAN_ID_MIN  = 3U; // W3 
-        static unsigned short wxId          = 3U;
-
-        uint16_t idx        = 0x2060;           // default for SDO_UPLOAD_BUS_VOLTAGE SDO frame
-        uint8_t subidx      = 0x00;             // always zero...
-
-        CO_SDO_abortCode_t  abortCode;
-        size_t              sizeTransferred;
-        CO_SDO_return_t     SDO_ret;
-        uint32_t            timeDiff_us = 1000U;
-        uint32_t            timeNext_us = 2000U;
-
-        bool updateWxId = false;                // set to TRUE either via Rx message or timeout
-        static bool isSdoClientReady = false;   // true when setup/configured and initialized
-
-        sdoFrame = sdoFrameNext; // updates FSM
-
-        if ( ( false == isSdoClientReady ) && ( --decimator < 1U ) ) // 2.1., note decimator only evaluated&decremented if SDO client is not ready
-        {
-            decimator = DECIMATOR_MAX; // restart!
-
-            switch ( sdoFrame )
-            {
-                case SDO_UPLOAD_BUS_VOLTAGE:
-                    idx         = 0x2060;                
-                    break;
-
-                case SDO_UPLOAD_POWER_STAGE_TEMPERATURE:                
-                    idx         = 0x2061;                
-                    break;
-
-                case SDO_UPLOAD_SYSTEM_LAST_ERROR:                
-                    idx         = 0x5E49;                
-                    break;
-
-                case SDO_UPLOAD_STO_STATUS:                
-                    idx         = 0x251A;                
-                    break;
-
-                case SDO_UPLOAD_ERROR_TOTAL_NUMBER:                
-                    idx         = 0x264D;                
-                    break;
-
-                case SDO_UPLOAD_TOTAL:
-                default:
-                    sdoFrameNext = (enum SdoUploadFrame_t)(0); // safety!
-                    return; // error!
-            }
-            
-            /* setup client */
-            SDO_ret = CO_SDOclient_setup(co->SDOclient, (uint32_t)CO_CAN_ID_SDO_CLI + wxId, (uint32_t)CO_CAN_ID_SDO_SRV + wxId, wxId); // all the same value, it works ok
-            if (SDO_ret != CO_SDO_RT_ok_communicationEnd) {
-                return; // error!
-            }
-
-            /* initiate upload */
-            uint16_t timeout_ms = 100U;
-            SDO_ret = CO_SDOclientUploadInitiate(co->SDOclient, idx, subidx, timeout_ms, true);
-            if (SDO_ret != CO_SDO_RT_ok_communicationEnd) {
-                return; // error!
-            }
-
-            else{
-                isSdoClientReady = true;
-            }            
-        }
-
-        // 2.2. Loops over Rx but only if SDO client is ready
-        if( true == isSdoClientReady )
-        {
-            SDO_ret = CO_SDOclientUpload(co->SDOclient, timeDiff_us, false, &abortCode, NULL, &sizeTransferred, &timeNext_us);                 // non-blocking
-
-            if (SDO_ret < CO_SDO_RT_ok_communicationEnd) {
-                updateWxId = true; // error
-            }
-            /* Response data must be read, partially or whole */
-            else if ((SDO_ret == CO_SDO_RT_uploadDataBufferFull) || (SDO_ret == CO_SDO_RT_ok_communicationEnd)) {
-
-                // Parsing! hence, ready via EtherCAT too!
-                uint16_t rxIdx      = co->SDOclient->CANrxData[1];          // LSB
-                rxIdx               |= (co->SDOclient->CANrxData[2] << 8);  // MSB
-                uint8_t rxSubIdx    = co->SDOclient->CANrxData[3];
-
-                app_sdoCustomParsing( wxId, rxIdx, rxSubIdx, &co->SDOclient->CANrxData[4] );
-                updateWxId = true;
-
-                // Function must be called after finish of each SDO client communication cycle
-                CO_SDOclientClose(co->SDOclient);
-            }
-
-            else // still waiting?
-            {
-                static unsigned char timeout = 0xFF;
-                if ( 0 == --timeout ){ // overflows automatically!
-                    updateWxId = true; // timeout error!
-                }
-            }
-
-            // 3. Updates Wx ID and messages ID (FSM)
-            if( true == updateWxId )        // note this is a local variable initialized to false always
-            {
-                isSdoClientReady = false;   // 3.1. Resets SDO client ready flag
-
-                if(++wxId > WX_CAN_ID_MAX)  // 3.2. Increments and checks Wx ID overflow!
-                {
-                    wxId = WX_CAN_ID_MIN;
-                    if( ++sdoFrameNext >= SDO_UPLOAD_TOTAL)         // 3.3. Increments and checks SDO frame ID overflow
-                        sdoFrameNext = (enum SdoUploadFrame_t)(0);  // safest reset!
-                }
-            }
-        }
-    }
+//    // 1. NMT START to each CAN ID
+//    static bool IsNmtOp = false;
+//    
+//    if( false == IsNmtOp )
+//    {
+//        static unsigned int count = 0;
+//        
+//        if( 20000U == count )
+//        {
+//            CO_NMT_sendCommand(co->NMT, CO_NMT_ENTER_OPERATIONAL, 0x03);    
+//        }
+//        
+//        else if( 20100U == count )
+//        {
+//            CO_NMT_sendCommand(co->NMT, CO_NMT_ENTER_OPERATIONAL, 0x04);
+//        }
+//        
+//        else if( 20200U == count )
+//        {
+//            CO_NMT_sendCommand(co->NMT, CO_NMT_ENTER_OPERATIONAL, 0x05);  
+//        }
+//        
+//        else if( 20300U == count )
+//        {
+//            CO_NMT_sendCommand(co->NMT, CO_NMT_ENTER_OPERATIONAL, 0x06);
+//            
+//            IsNmtOp = true; // end
+//        }
+//
+//        else { } // good practice
+//        
+//        ++count;
+//        
+//        return;
+//    }
+//    
+//    else
+//    {
+//        // 1.1 NMT auto-recovery, this is the NMT master
+////        if ( ( CO_NMT_OPERATIONAL != co->NMT->operatingState ) && ( CO_NMT_OPERATIONAL == co->NMT->operatingStatePrev ) ) // it may fail if many consecutive "fails" happen
+//        if ( CO_NMT_OPERATIONAL != co->NMT->operatingState ) // simplest, hotfix
+//        {
+//            CO_NMT_sendInternalCommand( co->NMT, CO_NMT_OPERATIONAL);
+//        }
+//        
+//        static bool isReset = false;
+//        // 1.2. Denali & CO3 recovery from EMCY - so simple, just a test!        
+//        
+//        if ( true == isReset )
+//        {
+//            isReset = false;
+//            CO_NMT_sendInternalCommand(co->NMT, CO_NMT_ENTER_OPERATIONAL);           // 1.2.1. second, recover to OP, just itself or...
+//            CO_NMT_sendCommand(co->NMT, CO_NMT_ENTER_OPERATIONAL, 0);                 // to all nodes? including itself
+//        }
+//        
+//        if ( 0 != co->CANmodule->CANerrorStatus ) // checks flag bits - any        
+//        {
+//            co->CANmodule->CANerrorStatus = 0; // needed? wrong?
+//
+//            CO_NMT_sendInternalCommand( co->NMT, CO_NMT_RESET_COMMUNICATION);           // 1.2.2. first, reset comms      
+//            isReset = true;
+//        }
+//                    
+//        // 2. Cyclic SDO - Simple FSM for SDO upload frames iteration, which are directly related to the EtherCAT PDI
+//        static enum SdoUploadFrame_t sdoFrame       = SDO_UPLOAD_BUS_VOLTAGE;   // current fsm frame
+//        static enum SdoUploadFrame_t sdoFrameNext   = SDO_UPLOAD_BUS_VOLTAGE;   // next fsm frame
+//
+//        const unsigned char DECIMATOR_MAX   = 60U;                       // 60 iterations @ 5 [ms] = 300 [ms] between messages
+//        static unsigned char decimator      = 60U;                       // the first one should not be too early... after NMT at least...
+//        // COB-ID for each Wx, all SDO uploads but not with the same payload lenght, index or subindex.
+//        const unsigned short WX_CAN_ID_MAX  = 6U; // W6
+//        const unsigned short WX_CAN_ID_MIN  = 3U; // W3 
+//        static unsigned short wxId          = 3U;
+//
+//        uint16_t idx        = 0x2060;           // default for SDO_UPLOAD_BUS_VOLTAGE SDO frame
+//        uint8_t subidx      = 0x00;             // always zero...
+//
+//        CO_SDO_abortCode_t  abortCode;
+//        size_t              sizeTransferred;
+//        CO_SDO_return_t     SDO_ret;
+//        uint32_t            timeDiff_us = 1000U;
+//        uint32_t            timeNext_us = 2000U;
+//
+//        bool updateWxId = false;                // set to TRUE either via Rx message or timeout
+//        static bool isSdoClientReady = false;   // true when setup/configured and initialized
+//
+//        sdoFrame = sdoFrameNext; // updates FSM
+//
+//        if ( ( false == isSdoClientReady ) && ( --decimator < 1U ) ) // 2.1., note decimator only evaluated&decremented if SDO client is not ready
+//        {
+//            decimator = DECIMATOR_MAX; // restart!
+//
+//            switch ( sdoFrame )
+//            {
+//                case SDO_UPLOAD_BUS_VOLTAGE:
+//                    idx         = 0x2060;                
+//                    break;
+//
+//                case SDO_UPLOAD_POWER_STAGE_TEMPERATURE:                
+//                    idx         = 0x2061;                
+//                    break;
+//
+//                case SDO_UPLOAD_SYSTEM_LAST_ERROR:                
+//                    idx         = 0x5E49;                
+//                    break;
+//
+//                case SDO_UPLOAD_STO_STATUS:                
+//                    idx         = 0x251A;                
+//                    break;
+//
+//                case SDO_UPLOAD_ERROR_TOTAL_NUMBER:                
+//                    idx         = 0x264D;                
+//                    break;
+//
+//                case SDO_UPLOAD_TOTAL:
+//                default:
+//                    sdoFrameNext = (enum SdoUploadFrame_t)(0); // safety!
+//                    return; // error!
+//            }
+//            
+//            /* setup client */
+//            SDO_ret = CO_SDOclient_setup(co->SDOclient, (uint32_t)CO_CAN_ID_SDO_CLI + wxId, (uint32_t)CO_CAN_ID_SDO_SRV + wxId, wxId); // all the same value, it works ok
+//            if (SDO_ret != CO_SDO_RT_ok_communicationEnd) {
+//                return; // error!
+//            }
+//
+//            /* initiate upload */
+//            uint16_t timeout_ms = 100U;
+//            SDO_ret = CO_SDOclientUploadInitiate(co->SDOclient, idx, subidx, timeout_ms, true);
+//            if (SDO_ret != CO_SDO_RT_ok_communicationEnd) {
+//                return; // error!
+//            }
+//
+//            else{
+//                isSdoClientReady = true;
+//            }            
+//        }
+//
+//        // 2.2. Loops over Rx but only if SDO client is ready
+//        if( true == isSdoClientReady )
+//        {
+//            SDO_ret = CO_SDOclientUpload(co->SDOclient, timeDiff_us, false, &abortCode, NULL, &sizeTransferred, &timeNext_us);                 // non-blocking
+//
+//            if (SDO_ret < CO_SDO_RT_ok_communicationEnd) {
+//                updateWxId = true; // error
+//            }
+//            /* Response data must be read, partially or whole */
+//            else if ((SDO_ret == CO_SDO_RT_uploadDataBufferFull) || (SDO_ret == CO_SDO_RT_ok_communicationEnd)) {
+//
+//                // Parsing! hence, ready via EtherCAT too!
+//                uint16_t rxIdx      = co->SDOclient->CANrxData[1];          // LSB
+//                rxIdx               |= (co->SDOclient->CANrxData[2] << 8);  // MSB
+//                uint8_t rxSubIdx    = co->SDOclient->CANrxData[3];
+//
+//                app_sdoCustomParsing( wxId, rxIdx, rxSubIdx, &co->SDOclient->CANrxData[4] );
+//                updateWxId = true;
+//
+//                // Function must be called after finish of each SDO client communication cycle
+//                CO_SDOclientClose(co->SDOclient);
+//            }
+//
+//            else // still waiting?
+//            {
+//                static unsigned char timeout = 0xFF;
+//                if ( 0 == --timeout ){ // overflows automatically!
+//                    updateWxId = true; // timeout error!
+//                }
+//            }
+//
+//            // 3. Updates Wx ID and messages ID (FSM)
+//            if( true == updateWxId )        // note this is a local variable initialized to false always
+//            {
+//                isSdoClientReady = false;   // 3.1. Resets SDO client ready flag
+//
+//                if(++wxId > WX_CAN_ID_MAX)  // 3.2. Increments and checks Wx ID overflow!
+//                {
+//                    wxId = WX_CAN_ID_MIN;
+//                    if( ++sdoFrameNext >= SDO_UPLOAD_TOTAL)         // 3.3. Increments and checks SDO frame ID overflow
+//                        sdoFrameNext = (enum SdoUploadFrame_t)(0);  // safest reset!
+//                }
+//            }
+//        }
+//    }
 }
 
 
@@ -367,144 +367,144 @@ void app_peripheralWrite(CO_t *co, uint32_t timer1usDiff) {
 }
 
 
-int app_sdoCustomParsing( unsigned short Wx, unsigned short Index, unsigned char SubIndex, uint8_t* Buff )
-{
-    switch ( Index )
-    {
-        case ( 0x2060 ): // BUS_VOLTAGE
-            
-            switch ( Wx )
-            {
-                case ( 3U ):
-                    memcpy( &OD_PERSIST_COMM.x2000_W3DenaliOutputs.busVoltageValue, Buff, sizeof(OD_PERSIST_COMM.x2000_W3DenaliOutputs.busVoltageValue) );
-                    break;
-                    
-                case ( 4U ):
-                    memcpy( &OD_PERSIST_COMM.x2002_W4DenaliOutputs.busVoltageValue, Buff, sizeof(OD_PERSIST_COMM.x2002_W4DenaliOutputs.busVoltageValue) );
-                    break;
-                    
-                case ( 5U ):
-                    memcpy( &OD_PERSIST_COMM.x2004_W5DenaliOutputs.busVoltageValue, Buff, sizeof(OD_PERSIST_COMM.x2004_W5DenaliOutputs.busVoltageValue) );
-                    break;
-                    
-                case ( 6U ):
-                    memcpy( &OD_PERSIST_COMM.x2006_W6DenaliOutputs.busVoltageValue, Buff, sizeof(OD_PERSIST_COMM.x2006_W6DenaliOutputs.busVoltageValue) );
-                    break;
-                    
-                default:
-                    return 1; // error
-            }            
-            
-            break;
-            
-        case ( 0x2061 ): // POWER_STAGE_TEMPERATURE
-            
-            switch ( Wx )
-            {
-                case ( 3U ):
-                    memcpy( &OD_PERSIST_COMM.x2000_W3DenaliOutputs.powerStageTemperature1Value, Buff, sizeof(OD_PERSIST_COMM.x2000_W3DenaliOutputs.powerStageTemperature1Value) );
-                    break;
-                    
-                case ( 4U ):
-                    memcpy( &OD_PERSIST_COMM.x2002_W4DenaliOutputs.powerStageTemperature1Value, Buff, sizeof(OD_PERSIST_COMM.x2002_W4DenaliOutputs.powerStageTemperature1Value) );
-                    break;
-                    
-                case ( 5U ):
-                    memcpy( &OD_PERSIST_COMM.x2004_W5DenaliOutputs.powerStageTemperature1Value, Buff, sizeof(OD_PERSIST_COMM.x2004_W5DenaliOutputs.powerStageTemperature1Value) );
-                    break;
-                    
-                case ( 6U ):
-                    memcpy( &OD_PERSIST_COMM.x2006_W6DenaliOutputs.powerStageTemperature1Value, Buff, sizeof(OD_PERSIST_COMM.x2006_W6DenaliOutputs.powerStageTemperature1Value) );
-                    break;
-                    
-                default:
-                    return 1; // error
-            }            
-            
-            break;
-            
-        case ( 0x5E49 ): // SYSTEM_LAST_ERROR
-            
-            switch ( Wx )
-            {
-                case ( 3U ):
-                    memcpy( &OD_PERSIST_COMM.x2000_W3DenaliOutputs.systemLastError, Buff, sizeof(OD_PERSIST_COMM.x2000_W3DenaliOutputs.systemLastError) );
-                    break;
-                    
-                case ( 4U ):
-                    memcpy( &OD_PERSIST_COMM.x2002_W4DenaliOutputs.systemLastError, Buff, sizeof(OD_PERSIST_COMM.x2002_W4DenaliOutputs.systemLastError) );
-                    break;
-                    
-                case ( 5U ):
-                    memcpy( &OD_PERSIST_COMM.x2004_W5DenaliOutputs.systemLastError, Buff, sizeof(OD_PERSIST_COMM.x2004_W5DenaliOutputs.systemLastError) );
-                    break;
-                    
-                case ( 6U ):
-                    memcpy( &OD_PERSIST_COMM.x2006_W6DenaliOutputs.systemLastError, Buff, sizeof(OD_PERSIST_COMM.x2006_W6DenaliOutputs.systemLastError) );
-                    break;
-                    
-                default:
-                    return 1; // error
-            }            
-            
-            break;            
-            
-        case ( 0x251A ): // STO_STATUS
-            
-            switch ( Wx )
-            {
-                case ( 3U ):
-                    memcpy( &OD_PERSIST_COMM.x2000_W3DenaliOutputs.STOStatus, Buff, sizeof(OD_PERSIST_COMM.x2000_W3DenaliOutputs.STOStatus) );
-                    break;
-                    
-                case ( 4U ):
-                    memcpy( &OD_PERSIST_COMM.x2002_W4DenaliOutputs.STOStatus, Buff, sizeof(OD_PERSIST_COMM.x2002_W4DenaliOutputs.STOStatus) );
-                    break;
-                    
-                case ( 5U ):
-                    memcpy( &OD_PERSIST_COMM.x2004_W5DenaliOutputs.STOStatus, Buff, sizeof(OD_PERSIST_COMM.x2004_W5DenaliOutputs.STOStatus) );
-                    break;
-                    
-                case ( 6U ):
-                    memcpy( &OD_PERSIST_COMM.x2006_W6DenaliOutputs.STOStatus, Buff, sizeof(OD_PERSIST_COMM.x2006_W6DenaliOutputs.STOStatus) );
-                    break;
-                    
-                default:
-                    return 1; // error
-            }            
-            
-            break;
-            
-
-        case ( 0x264D ): // ERROR_TOTAL_NUMBER
-            
-            switch ( Wx )
-            {
-                case ( 3U ):
-                    memcpy( &OD_PERSIST_COMM.x2000_W3DenaliOutputs.systemErrorTotalNumber, Buff, sizeof(OD_PERSIST_COMM.x2000_W3DenaliOutputs.systemErrorTotalNumber) );
-                    break;
-                    
-                case ( 4U ):
-                    memcpy( &OD_PERSIST_COMM.x2002_W4DenaliOutputs.systemErrorTotalNumber, Buff, sizeof(OD_PERSIST_COMM.x2002_W4DenaliOutputs.systemErrorTotalNumber) );
-                    break;
-                    
-                case ( 5U ):
-                    memcpy( &OD_PERSIST_COMM.x2004_W5DenaliOutputs.systemErrorTotalNumber, Buff, sizeof(OD_PERSIST_COMM.x2004_W5DenaliOutputs.systemErrorTotalNumber) );
-                    break;
-                    
-                case ( 6U ):
-                    memcpy( &OD_PERSIST_COMM.x2006_W6DenaliOutputs.systemErrorTotalNumber, Buff, sizeof(OD_PERSIST_COMM.x2006_W6DenaliOutputs.systemErrorTotalNumber) );
-                    break;
-                    
-                default:
-                    return 1; // error
-            }
-            
-            break;
-            
-        default: // unknown index?
-            return 1;
-    }
-    
-    return 0; // Ok!
-}
+//int app_sdoCustomParsing( unsigned short Wx, unsigned short Index, unsigned char SubIndex, uint8_t* Buff )
+//{
+//    switch ( Index )
+//    {
+//        case ( 0x2060 ): // BUS_VOLTAGE
+//            
+//            switch ( Wx )
+//            {
+//                case ( 3U ):
+//                    memcpy( &OD_PERSIST_COMM.x2000_W3DenaliOutputs.busVoltageValue, Buff, sizeof(OD_PERSIST_COMM.x2000_W3DenaliOutputs.busVoltageValue) );
+//                    break;
+//                    
+//                case ( 4U ):
+//                    memcpy( &OD_PERSIST_COMM.x2002_W4DenaliOutputs.busVoltageValue, Buff, sizeof(OD_PERSIST_COMM.x2002_W4DenaliOutputs.busVoltageValue) );
+//                    break;
+//                    
+//                case ( 5U ):
+//                    memcpy( &OD_PERSIST_COMM.x2004_W5DenaliOutputs.busVoltageValue, Buff, sizeof(OD_PERSIST_COMM.x2004_W5DenaliOutputs.busVoltageValue) );
+//                    break;
+//                    
+//                case ( 6U ):
+//                    memcpy( &OD_PERSIST_COMM.x2006_W6DenaliOutputs.busVoltageValue, Buff, sizeof(OD_PERSIST_COMM.x2006_W6DenaliOutputs.busVoltageValue) );
+//                    break;
+//                    
+//                default:
+//                    return 1; // error
+//            }            
+//            
+//            break;
+//            
+//        case ( 0x2061 ): // POWER_STAGE_TEMPERATURE
+//            
+//            switch ( Wx )
+//            {
+//                case ( 3U ):
+//                    memcpy( &OD_PERSIST_COMM.x2000_W3DenaliOutputs.powerStageTemperature1Value, Buff, sizeof(OD_PERSIST_COMM.x2000_W3DenaliOutputs.powerStageTemperature1Value) );
+//                    break;
+//                    
+//                case ( 4U ):
+//                    memcpy( &OD_PERSIST_COMM.x2002_W4DenaliOutputs.powerStageTemperature1Value, Buff, sizeof(OD_PERSIST_COMM.x2002_W4DenaliOutputs.powerStageTemperature1Value) );
+//                    break;
+//                    
+//                case ( 5U ):
+//                    memcpy( &OD_PERSIST_COMM.x2004_W5DenaliOutputs.powerStageTemperature1Value, Buff, sizeof(OD_PERSIST_COMM.x2004_W5DenaliOutputs.powerStageTemperature1Value) );
+//                    break;
+//                    
+//                case ( 6U ):
+//                    memcpy( &OD_PERSIST_COMM.x2006_W6DenaliOutputs.powerStageTemperature1Value, Buff, sizeof(OD_PERSIST_COMM.x2006_W6DenaliOutputs.powerStageTemperature1Value) );
+//                    break;
+//                    
+//                default:
+//                    return 1; // error
+//            }            
+//            
+//            break;
+//            
+//        case ( 0x5E49 ): // SYSTEM_LAST_ERROR
+//            
+//            switch ( Wx )
+//            {
+//                case ( 3U ):
+//                    memcpy( &OD_PERSIST_COMM.x2000_W3DenaliOutputs.systemLastError, Buff, sizeof(OD_PERSIST_COMM.x2000_W3DenaliOutputs.systemLastError) );
+//                    break;
+//                    
+//                case ( 4U ):
+//                    memcpy( &OD_PERSIST_COMM.x2002_W4DenaliOutputs.systemLastError, Buff, sizeof(OD_PERSIST_COMM.x2002_W4DenaliOutputs.systemLastError) );
+//                    break;
+//                    
+//                case ( 5U ):
+//                    memcpy( &OD_PERSIST_COMM.x2004_W5DenaliOutputs.systemLastError, Buff, sizeof(OD_PERSIST_COMM.x2004_W5DenaliOutputs.systemLastError) );
+//                    break;
+//                    
+//                case ( 6U ):
+//                    memcpy( &OD_PERSIST_COMM.x2006_W6DenaliOutputs.systemLastError, Buff, sizeof(OD_PERSIST_COMM.x2006_W6DenaliOutputs.systemLastError) );
+//                    break;
+//                    
+//                default:
+//                    return 1; // error
+//            }            
+//            
+//            break;            
+//            
+//        case ( 0x251A ): // STO_STATUS
+//            
+//            switch ( Wx )
+//            {
+//                case ( 3U ):
+//                    memcpy( &OD_PERSIST_COMM.x2000_W3DenaliOutputs.STOStatus, Buff, sizeof(OD_PERSIST_COMM.x2000_W3DenaliOutputs.STOStatus) );
+//                    break;
+//                    
+//                case ( 4U ):
+//                    memcpy( &OD_PERSIST_COMM.x2002_W4DenaliOutputs.STOStatus, Buff, sizeof(OD_PERSIST_COMM.x2002_W4DenaliOutputs.STOStatus) );
+//                    break;
+//                    
+//                case ( 5U ):
+//                    memcpy( &OD_PERSIST_COMM.x2004_W5DenaliOutputs.STOStatus, Buff, sizeof(OD_PERSIST_COMM.x2004_W5DenaliOutputs.STOStatus) );
+//                    break;
+//                    
+//                case ( 6U ):
+//                    memcpy( &OD_PERSIST_COMM.x2006_W6DenaliOutputs.STOStatus, Buff, sizeof(OD_PERSIST_COMM.x2006_W6DenaliOutputs.STOStatus) );
+//                    break;
+//                    
+//                default:
+//                    return 1; // error
+//            }            
+//            
+//            break;
+//            
+//
+//        case ( 0x264D ): // ERROR_TOTAL_NUMBER
+//            
+//            switch ( Wx )
+//            {
+//                case ( 3U ):
+//                    memcpy( &OD_PERSIST_COMM.x2000_W3DenaliOutputs.systemErrorTotalNumber, Buff, sizeof(OD_PERSIST_COMM.x2000_W3DenaliOutputs.systemErrorTotalNumber) );
+//                    break;
+//                    
+//                case ( 4U ):
+//                    memcpy( &OD_PERSIST_COMM.x2002_W4DenaliOutputs.systemErrorTotalNumber, Buff, sizeof(OD_PERSIST_COMM.x2002_W4DenaliOutputs.systemErrorTotalNumber) );
+//                    break;
+//                    
+//                case ( 5U ):
+//                    memcpy( &OD_PERSIST_COMM.x2004_W5DenaliOutputs.systemErrorTotalNumber, Buff, sizeof(OD_PERSIST_COMM.x2004_W5DenaliOutputs.systemErrorTotalNumber) );
+//                    break;
+//                    
+//                case ( 6U ):
+//                    memcpy( &OD_PERSIST_COMM.x2006_W6DenaliOutputs.systemErrorTotalNumber, Buff, sizeof(OD_PERSIST_COMM.x2006_W6DenaliOutputs.systemErrorTotalNumber) );
+//                    break;
+//                    
+//                default:
+//                    return 1; // error
+//            }
+//            
+//            break;
+//            
+//        default: // unknown index?
+//            return 1;
+//    }
+//    
+//    return 0; // Ok!
+//}
