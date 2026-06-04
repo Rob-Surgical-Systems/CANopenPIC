@@ -389,67 +389,6 @@ int CO_Config ()
 }
 
 
-
-/* timer interrupt function executes every millisecond ************************/
-#ifdef CO_RT_THREAD_ISR_DEFAULT
-void CO_RT_THREAD_ISR() {
-    CO_timer_us += CO_RT_THREAD_INTERVAL_US;
-
-    /* Execute external application code */
-    app_peripheralRead(CO, CO_RT_THREAD_INTERVAL_US);
-
-    CO_RT_THREAD_ISR_FLAG = 0; // probably deleted soon as it is already done in the TMR1 interrupt
-//        IFS0bits.T1IF = 0;
-
-    /* No need to CO_LOCK_OD(co->CANmodule); this is interrupt */
-    if (!CO->nodeIdUnconfigured && CO->CANmodule->CANnormal)
-    {
-        bool_t syncWas = false;
-
-#if (CO_CONFIG_SYNC) & CO_CONFIG_SYNC_ENABLE
-        syncWas = CO_process_SYNC(CO, CO_RT_THREAD_INTERVAL_US, NULL);
-#endif
-#if (CO_CONFIG_PDO) & CO_CONFIG_RPDO_ENABLE
-        CO_process_RPDO(CO, syncWas, CO_RT_THREAD_INTERVAL_US, NULL);
-#endif
-
-        /* Execute external application code */
-        app_programRt(CO, CO_RT_THREAD_INTERVAL_US);
-
-#if (CO_CONFIG_PDO) & CO_CONFIG_TPDO_ENABLE
-        CO_process_TPDO(CO, syncWas, CO_RT_THREAD_INTERVAL_US, NULL);
-#endif
-
-        /* verify timer overflow */
-#warning "Error report service is temporally disabled"
-//        if (CO_RT_THREAD_ISR_FLAG == 1) {
-//            CO_errorReport(CO->em, CO_EM_ISR_TIMER_OVERFLOW,
-//                           CO_EMC_SOFTWARE_INTERNAL, 0);
-//            CO_RT_THREAD_ISR_FLAG = 0;
-//        }
-
-        (void) syncWas;
-    }
-
-    /* Execute external application code */
-    app_peripheralWrite(CO, CO_RT_THREAD_INTERVAL_US);
-}
-#endif /* CO_RT_THREAD_ISR_DEFAULT */
-
-// 9.) Deletes the CAN interrupt function *****************************************************/
-#ifdef CO_CANRX_ISR_DEFAULT
-CO_CANRX_ISR() {
-//void CO_RxInterrupt() { // TODO
-    
-    // IEC1bits.CAN1IE register is set/reset by CO_CANinterrupt() below!
-    CO_CANinterrupt(CO->CANmodule);
-    /* Clear combined Interrupt flag */
-    CO_CANRX_ISR_FLAG = 0;
-}
-#endif    
-
-
-
 // 8.3.) Update stage
 #warning "New Update method, but SSL service may require to reuse some code, or all, of the Initialization stage"
 int CO_Update ()
@@ -522,6 +461,68 @@ int CO_Update ()
     
     return (int)reset; // valid to notify errors/reset
 }
+
+
+
+/* timer interrupt function executes every millisecond ************************/
+#ifdef CO_RT_THREAD_ISR_DEFAULT
+void CO_RT_THREAD_ISR() {
+    CO_timer_us += CO_RT_THREAD_INTERVAL_US;
+
+    /* Execute external application code */
+    app_peripheralRead(CO, CO_RT_THREAD_INTERVAL_US);
+
+    CO_RT_THREAD_ISR_FLAG = 0; // probably deleted soon as it is already done in the TMR1 interrupt
+//        IFS0bits.T1IF = 0;
+
+    /* No need to CO_LOCK_OD(co->CANmodule); this is interrupt */
+    if (!CO->nodeIdUnconfigured && CO->CANmodule->CANnormal)
+    {
+        bool_t syncWas = false;
+
+#if (CO_CONFIG_SYNC) & CO_CONFIG_SYNC_ENABLE
+        syncWas = CO_process_SYNC(CO, CO_RT_THREAD_INTERVAL_US, NULL);
+#endif
+#if (CO_CONFIG_PDO) & CO_CONFIG_RPDO_ENABLE
+        CO_process_RPDO(CO, syncWas, CO_RT_THREAD_INTERVAL_US, NULL);
+#endif
+
+        /* Execute external application code */
+        app_programRt(CO, CO_RT_THREAD_INTERVAL_US);
+
+#if (CO_CONFIG_PDO) & CO_CONFIG_TPDO_ENABLE
+        CO_process_TPDO(CO, syncWas, CO_RT_THREAD_INTERVAL_US, NULL);
+#endif
+
+        /* verify timer overflow */
+#warning "Error report service is temporally disabled"
+//        if (CO_RT_THREAD_ISR_FLAG == 1) {
+//            CO_errorReport(CO->em, CO_EM_ISR_TIMER_OVERFLOW,
+//                           CO_EMC_SOFTWARE_INTERNAL, 0);
+//            CO_RT_THREAD_ISR_FLAG = 0;
+//        }
+
+        (void) syncWas;
+    }
+
+    /* Execute external application code */
+    app_peripheralWrite(CO, CO_RT_THREAD_INTERVAL_US);
+}
+#endif /* CO_RT_THREAD_ISR_DEFAULT */
+
+// 9.) Deletes the CAN interrupt function *****************************************************/
+#ifdef CO_CANRX_ISR_DEFAULT
+CO_CANRX_ISR() {
+//void CO_RxInterrupt() { // TODO
+    
+    // IEC1bits.CAN1IE register is set/reset by CO_CANinterrupt() below!
+    CO_CANinterrupt(CO->CANmodule);
+    /* Clear combined Interrupt flag */
+    CO_CANRX_ISR_FLAG = 0;
+}
+#endif    
+
+
 
 
 

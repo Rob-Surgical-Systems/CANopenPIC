@@ -367,144 +367,144 @@ void app_peripheralWrite(CO_t *co, uint32_t timer1usDiff) {
 }
 
 
-//int app_sdoCustomParsing( unsigned short Wx, unsigned short Index, unsigned char SubIndex, uint8_t* Buff )
-//{
-//    switch ( Index )
-//    {
-//        case ( 0x2060 ): // BUS_VOLTAGE
-//            
-//            switch ( Wx )
-//            {
-//                case ( 3U ):
-//                    memcpy( &OD_PERSIST_COMM.x2000_W3DenaliOutputs.busVoltageValue, Buff, sizeof(OD_PERSIST_COMM.x2000_W3DenaliOutputs.busVoltageValue) );
-//                    break;
-//                    
-//                case ( 4U ):
-//                    memcpy( &OD_PERSIST_COMM.x2002_W4DenaliOutputs.busVoltageValue, Buff, sizeof(OD_PERSIST_COMM.x2002_W4DenaliOutputs.busVoltageValue) );
-//                    break;
-//                    
-//                case ( 5U ):
-//                    memcpy( &OD_PERSIST_COMM.x2004_W5DenaliOutputs.busVoltageValue, Buff, sizeof(OD_PERSIST_COMM.x2004_W5DenaliOutputs.busVoltageValue) );
-//                    break;
-//                    
-//                case ( 6U ):
-//                    memcpy( &OD_PERSIST_COMM.x2006_W6DenaliOutputs.busVoltageValue, Buff, sizeof(OD_PERSIST_COMM.x2006_W6DenaliOutputs.busVoltageValue) );
-//                    break;
-//                    
-//                default:
-//                    return 1; // error
-//            }            
-//            
-//            break;
-//            
-//        case ( 0x2061 ): // POWER_STAGE_TEMPERATURE
-//            
-//            switch ( Wx )
-//            {
-//                case ( 3U ):
-//                    memcpy( &OD_PERSIST_COMM.x2000_W3DenaliOutputs.powerStageTemperature1Value, Buff, sizeof(OD_PERSIST_COMM.x2000_W3DenaliOutputs.powerStageTemperature1Value) );
-//                    break;
-//                    
-//                case ( 4U ):
-//                    memcpy( &OD_PERSIST_COMM.x2002_W4DenaliOutputs.powerStageTemperature1Value, Buff, sizeof(OD_PERSIST_COMM.x2002_W4DenaliOutputs.powerStageTemperature1Value) );
-//                    break;
-//                    
-//                case ( 5U ):
-//                    memcpy( &OD_PERSIST_COMM.x2004_W5DenaliOutputs.powerStageTemperature1Value, Buff, sizeof(OD_PERSIST_COMM.x2004_W5DenaliOutputs.powerStageTemperature1Value) );
-//                    break;
-//                    
-//                case ( 6U ):
-//                    memcpy( &OD_PERSIST_COMM.x2006_W6DenaliOutputs.powerStageTemperature1Value, Buff, sizeof(OD_PERSIST_COMM.x2006_W6DenaliOutputs.powerStageTemperature1Value) );
-//                    break;
-//                    
-//                default:
-//                    return 1; // error
-//            }            
-//            
-//            break;
-//            
-//        case ( 0x5E49 ): // SYSTEM_LAST_ERROR
-//            
-//            switch ( Wx )
-//            {
-//                case ( 3U ):
-//                    memcpy( &OD_PERSIST_COMM.x2000_W3DenaliOutputs.systemLastError, Buff, sizeof(OD_PERSIST_COMM.x2000_W3DenaliOutputs.systemLastError) );
-//                    break;
-//                    
-//                case ( 4U ):
-//                    memcpy( &OD_PERSIST_COMM.x2002_W4DenaliOutputs.systemLastError, Buff, sizeof(OD_PERSIST_COMM.x2002_W4DenaliOutputs.systemLastError) );
-//                    break;
-//                    
-//                case ( 5U ):
-//                    memcpy( &OD_PERSIST_COMM.x2004_W5DenaliOutputs.systemLastError, Buff, sizeof(OD_PERSIST_COMM.x2004_W5DenaliOutputs.systemLastError) );
-//                    break;
-//                    
-//                case ( 6U ):
-//                    memcpy( &OD_PERSIST_COMM.x2006_W6DenaliOutputs.systemLastError, Buff, sizeof(OD_PERSIST_COMM.x2006_W6DenaliOutputs.systemLastError) );
-//                    break;
-//                    
-//                default:
-//                    return 1; // error
-//            }            
-//            
-//            break;            
-//            
-//        case ( 0x251A ): // STO_STATUS
-//            
-//            switch ( Wx )
-//            {
-//                case ( 3U ):
-//                    memcpy( &OD_PERSIST_COMM.x2000_W3DenaliOutputs.STOStatus, Buff, sizeof(OD_PERSIST_COMM.x2000_W3DenaliOutputs.STOStatus) );
-//                    break;
-//                    
-//                case ( 4U ):
-//                    memcpy( &OD_PERSIST_COMM.x2002_W4DenaliOutputs.STOStatus, Buff, sizeof(OD_PERSIST_COMM.x2002_W4DenaliOutputs.STOStatus) );
-//                    break;
-//                    
-//                case ( 5U ):
-//                    memcpy( &OD_PERSIST_COMM.x2004_W5DenaliOutputs.STOStatus, Buff, sizeof(OD_PERSIST_COMM.x2004_W5DenaliOutputs.STOStatus) );
-//                    break;
-//                    
-//                case ( 6U ):
-//                    memcpy( &OD_PERSIST_COMM.x2006_W6DenaliOutputs.STOStatus, Buff, sizeof(OD_PERSIST_COMM.x2006_W6DenaliOutputs.STOStatus) );
-//                    break;
-//                    
-//                default:
-//                    return 1; // error
-//            }            
-//            
-//            break;
-//            
-//
-//        case ( 0x264D ): // ERROR_TOTAL_NUMBER
-//            
-//            switch ( Wx )
-//            {
-//                case ( 3U ):
-//                    memcpy( &OD_PERSIST_COMM.x2000_W3DenaliOutputs.systemErrorTotalNumber, Buff, sizeof(OD_PERSIST_COMM.x2000_W3DenaliOutputs.systemErrorTotalNumber) );
-//                    break;
-//                    
-//                case ( 4U ):
-//                    memcpy( &OD_PERSIST_COMM.x2002_W4DenaliOutputs.systemErrorTotalNumber, Buff, sizeof(OD_PERSIST_COMM.x2002_W4DenaliOutputs.systemErrorTotalNumber) );
-//                    break;
-//                    
-//                case ( 5U ):
-//                    memcpy( &OD_PERSIST_COMM.x2004_W5DenaliOutputs.systemErrorTotalNumber, Buff, sizeof(OD_PERSIST_COMM.x2004_W5DenaliOutputs.systemErrorTotalNumber) );
-//                    break;
-//                    
-//                case ( 6U ):
-//                    memcpy( &OD_PERSIST_COMM.x2006_W6DenaliOutputs.systemErrorTotalNumber, Buff, sizeof(OD_PERSIST_COMM.x2006_W6DenaliOutputs.systemErrorTotalNumber) );
-//                    break;
-//                    
-//                default:
-//                    return 1; // error
-//            }
-//            
-//            break;
-//            
-//        default: // unknown index?
-//            return 1;
-//    }
-//    
-//    return 0; // Ok!
-//}
+int app_sdoCustomParsing( unsigned short Wx, unsigned short Index, unsigned char SubIndex, uint8_t* Buff )
+{
+    switch ( Index )
+    {
+        case ( 0x2060 ): // BUS_VOLTAGE
+            
+            switch ( Wx )
+            {
+                case ( 3U ):
+                    memcpy( &OD_PERSIST_COMM.x2000_W3DenaliOutputs.busVoltageValue, Buff, sizeof(OD_PERSIST_COMM.x2000_W3DenaliOutputs.busVoltageValue) );
+                    break;
+                    
+                case ( 4U ):
+                    memcpy( &OD_PERSIST_COMM.x2002_W4DenaliOutputs.busVoltageValue, Buff, sizeof(OD_PERSIST_COMM.x2002_W4DenaliOutputs.busVoltageValue) );
+                    break;
+                    
+                case ( 5U ):
+                    memcpy( &OD_PERSIST_COMM.x2004_W5DenaliOutputs.busVoltageValue, Buff, sizeof(OD_PERSIST_COMM.x2004_W5DenaliOutputs.busVoltageValue) );
+                    break;
+                    
+                case ( 6U ):
+                    memcpy( &OD_PERSIST_COMM.x2006_W6DenaliOutputs.busVoltageValue, Buff, sizeof(OD_PERSIST_COMM.x2006_W6DenaliOutputs.busVoltageValue) );
+                    break;
+                    
+                default:
+                    return 1; // error
+            }            
+            
+            break;
+            
+        case ( 0x2061 ): // POWER_STAGE_TEMPERATURE
+            
+            switch ( Wx )
+            {
+                case ( 3U ):
+                    memcpy( &OD_PERSIST_COMM.x2000_W3DenaliOutputs.powerStageTemperature1Value, Buff, sizeof(OD_PERSIST_COMM.x2000_W3DenaliOutputs.powerStageTemperature1Value) );
+                    break;
+                    
+                case ( 4U ):
+                    memcpy( &OD_PERSIST_COMM.x2002_W4DenaliOutputs.powerStageTemperature1Value, Buff, sizeof(OD_PERSIST_COMM.x2002_W4DenaliOutputs.powerStageTemperature1Value) );
+                    break;
+                    
+                case ( 5U ):
+                    memcpy( &OD_PERSIST_COMM.x2004_W5DenaliOutputs.powerStageTemperature1Value, Buff, sizeof(OD_PERSIST_COMM.x2004_W5DenaliOutputs.powerStageTemperature1Value) );
+                    break;
+                    
+                case ( 6U ):
+                    memcpy( &OD_PERSIST_COMM.x2006_W6DenaliOutputs.powerStageTemperature1Value, Buff, sizeof(OD_PERSIST_COMM.x2006_W6DenaliOutputs.powerStageTemperature1Value) );
+                    break;
+                    
+                default:
+                    return 1; // error
+            }            
+            
+            break;
+            
+        case ( 0x5E49 ): // SYSTEM_LAST_ERROR
+            
+            switch ( Wx )
+            {
+                case ( 3U ):
+                    memcpy( &OD_PERSIST_COMM.x2000_W3DenaliOutputs.systemLastError, Buff, sizeof(OD_PERSIST_COMM.x2000_W3DenaliOutputs.systemLastError) );
+                    break;
+                    
+                case ( 4U ):
+                    memcpy( &OD_PERSIST_COMM.x2002_W4DenaliOutputs.systemLastError, Buff, sizeof(OD_PERSIST_COMM.x2002_W4DenaliOutputs.systemLastError) );
+                    break;
+                    
+                case ( 5U ):
+                    memcpy( &OD_PERSIST_COMM.x2004_W5DenaliOutputs.systemLastError, Buff, sizeof(OD_PERSIST_COMM.x2004_W5DenaliOutputs.systemLastError) );
+                    break;
+                    
+                case ( 6U ):
+                    memcpy( &OD_PERSIST_COMM.x2006_W6DenaliOutputs.systemLastError, Buff, sizeof(OD_PERSIST_COMM.x2006_W6DenaliOutputs.systemLastError) );
+                    break;
+                    
+                default:
+                    return 1; // error
+            }            
+            
+            break;            
+            
+        case ( 0x251A ): // STO_STATUS
+            
+            switch ( Wx )
+            {
+                case ( 3U ):
+                    memcpy( &OD_PERSIST_COMM.x2000_W3DenaliOutputs.STOStatus, Buff, sizeof(OD_PERSIST_COMM.x2000_W3DenaliOutputs.STOStatus) );
+                    break;
+                    
+                case ( 4U ):
+                    memcpy( &OD_PERSIST_COMM.x2002_W4DenaliOutputs.STOStatus, Buff, sizeof(OD_PERSIST_COMM.x2002_W4DenaliOutputs.STOStatus) );
+                    break;
+                    
+                case ( 5U ):
+                    memcpy( &OD_PERSIST_COMM.x2004_W5DenaliOutputs.STOStatus, Buff, sizeof(OD_PERSIST_COMM.x2004_W5DenaliOutputs.STOStatus) );
+                    break;
+                    
+                case ( 6U ):
+                    memcpy( &OD_PERSIST_COMM.x2006_W6DenaliOutputs.STOStatus, Buff, sizeof(OD_PERSIST_COMM.x2006_W6DenaliOutputs.STOStatus) );
+                    break;
+                    
+                default:
+                    return 1; // error
+            }            
+            
+            break;
+            
+
+        case ( 0x264D ): // ERROR_TOTAL_NUMBER
+            
+            switch ( Wx )
+            {
+                case ( 3U ):
+                    memcpy( &OD_PERSIST_COMM.x2000_W3DenaliOutputs.systemErrorTotalNumber, Buff, sizeof(OD_PERSIST_COMM.x2000_W3DenaliOutputs.systemErrorTotalNumber) );
+                    break;
+                    
+                case ( 4U ):
+                    memcpy( &OD_PERSIST_COMM.x2002_W4DenaliOutputs.systemErrorTotalNumber, Buff, sizeof(OD_PERSIST_COMM.x2002_W4DenaliOutputs.systemErrorTotalNumber) );
+                    break;
+                    
+                case ( 5U ):
+                    memcpy( &OD_PERSIST_COMM.x2004_W5DenaliOutputs.systemErrorTotalNumber, Buff, sizeof(OD_PERSIST_COMM.x2004_W5DenaliOutputs.systemErrorTotalNumber) );
+                    break;
+                    
+                case ( 6U ):
+                    memcpy( &OD_PERSIST_COMM.x2006_W6DenaliOutputs.systemErrorTotalNumber, Buff, sizeof(OD_PERSIST_COMM.x2006_W6DenaliOutputs.systemErrorTotalNumber) );
+                    break;
+                    
+                default:
+                    return 1; // error
+            }
+            
+            break;
+            
+        default: // unknown index?
+            return 1;
+    }
+    
+    return 0; // Ok!
+}
