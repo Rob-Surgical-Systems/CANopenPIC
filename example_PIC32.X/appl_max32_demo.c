@@ -44,6 +44,7 @@
 
 /* CANopen LED diodes, already initialized in DEV_Init(), renamed here for easier integration. */
 #define CAN_INIT_LEDS() _nop()
+
 #ifdef PCB_E_CN_CO3_03
 #define CAN_RUN_LED     LED_CO_RUN_WR
 #define CAN_ERROR_LED   LED_CO_ERR_WR
