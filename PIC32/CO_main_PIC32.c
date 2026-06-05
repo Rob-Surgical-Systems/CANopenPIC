@@ -74,7 +74,7 @@
 
 /* Interval of the realtime thread */
 #ifndef CO_RT_THREAD_INTERVAL_US
-#define CO_RT_THREAD_INTERVAL_US 1000
+#define CO_RT_THREAD_INTERVAL_US 2000
 #endif
 
 //// 4) TMR1_ISR instead of TMR2_ISR, no ADC_ISR method!
@@ -350,7 +350,7 @@ int CO_Init () {
                                 CO_activeNodeId,
                                 &errInfo);
         if (err != CO_ERROR_NO && err != CO_ERROR_NODE_ID_UNCONFIGURED_LSS) {
-            while (1) CO_clearWDT();
+            //while (1) CO_clearWDT();
         }
 
 

@@ -37,7 +37,7 @@
 
 /* CANopen LED diodes, already initialized in DEV_Init(), renamed here for easier integration. */
 #define CAN_INIT_LEDS() _nop()
-#define CAN_RUN_LED     LED_TESTDEV_WR
+#define CAN_RUN_LED     LED_TEST_WR
 #define CAN_ERROR_LED   LED_ERROR_WR
 
 

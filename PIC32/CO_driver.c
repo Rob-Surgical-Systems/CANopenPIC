@@ -726,7 +726,7 @@ void CO_CANinterrupt(CO_CANmodule_t *CANmodule){
 //
 //        static int a = 0;
 //        if(a++ > 10)
-            LATFbits.LATF3      = !PORTFbits.RF3; // FAULT LED blinks! so flow is detected
+            LATCbits.LATC13      = !PORTCbits.RC13; // FAULT LED blinks! so flow is detected
 
 
         CO_CANrxMsg_t *rcvMsg;      /* pointer to received message in CAN module */
