@@ -65,16 +65,19 @@
 #define CO_RT_THREAD_CONFIG() { \
     T1CON = 0; \
     TMR1 = 0; \
-    PR1 = CO_PBCLK - 1; \
-    T1CON = 0x8000; \
-    IFS0bits.T1IF = 0; \
-    IPC1bits.T1IP = 7; \
+    PR1     = 312U; \
+    T1CONSET        = 0x30; \
+    IFS0bits.T1IF   = 0; \
+    IPC1bits.T1IP = 5;	\
+    IPC1bits.T1IS = 1;	\
+    IEC0bits.T1IE = 1;	\
+    T1CONSET        = 0x8000; \
 }
 #endif
 
 /* Interval of the realtime thread */
 #ifndef CO_RT_THREAD_INTERVAL_US
-#define CO_RT_THREAD_INTERVAL_US 2000
+#define CO_RT_THREAD_INTERVAL_US 1000
 #endif
 
 //// 4) TMR1_ISR instead of TMR2_ISR, no ADC_ISR method!
@@ -89,6 +92,11 @@
 /* Enable interrupt, 0 or 1 */
 #ifndef CO_RT_THREAD_ENABLE
 #define CO_RT_THREAD_ENABLE(ENABLE) IEC0bits.T1IE = ENABLE
+#endif
+
+/* Interrupt flag bit, used inside _rtThread, T1 instead of ADC */
+#ifndef CO_RT_THREAD_ISR_FLAG
+#define CO_RT_THREAD_ISR_FLAG IFS0bits.T1IF
 #endif
 
 /* CAN receive interrupt definitions */
@@ -184,6 +192,14 @@ static bool_t LSScfgStoreCallback(void *object, uint8_t id, uint16_t bitRate) {
     return true;
 }
 
+
+/** 
+ * @brief Modified reset for PR03.
+ * @remark Not validated yet! 
+ */
+CO_NMT_reset_cmd_t CommReset ();
+
+
 // 8.) Main is renamed to CO_main
 // 8.1) It has only the Initialization stage logics
 int CO_Init () {
@@ -241,7 +257,7 @@ int CO_Init () {
 
     /* Execute external application code */
     uint32_t errInfo_app_programStart = 0;
-#warning "Baud rate set to1Mbps!"
+#warning "Baud rate set to 1Mbps!"
     mlStorage.pendingBitRate    = (uint16_t)1000U;
 #warning "Node ID set to 0x01!"
     mlStorage.pendingNodeId     = (uint8_t)0x01;
@@ -350,13 +366,14 @@ int CO_Init () {
                                 CO_activeNodeId,
                                 &errInfo);
         if (err != CO_ERROR_NO && err != CO_ERROR_NODE_ID_UNCONFIGURED_LSS) {
-            //while (1) CO_clearWDT();
+            while (1) CO_clearWDT();//ES: todo error here
         }
 
 
         /* start CAN and enable interrupts */
         CO_CANsetNormalMode(CO->CANmodule);
 
+        //CO_RT_THREAD_ENABLE(1);//ES:todo double check added from CO3
         CO_CANRX_ENABLE(1);
         reset = CO_RESET_NOT;
 //    } /* while(reset != CO_RESET_APP */
@@ -373,18 +390,15 @@ int CO_Config ()
 
 
 
-
-
-
 /* timer interrupt function executes every millisecond ************************/
 #ifdef CO_RT_THREAD_ISR_DEFAULT
-CO_RT_THREAD_ISR() {
+void CO_RT_THREAD_ISR() {
     CO_timer_us += CO_RT_THREAD_INTERVAL_US;
 
     /* Execute external application code */
     app_peripheralRead(CO, CO_RT_THREAD_INTERVAL_US);
 
-//    CO_RT_THREAD_ISR_FLAG = 0;
+    //CO_RT_THREAD_ISR_FLAG = 0;////////////////////////////ES:chekc was added in CO3
 
     /* No need to CO_LOCK_OD(co->CANmodule); this is interrupt */
     if (!CO->nodeIdUnconfigured && CO->CANmodule->CANnormal)
@@ -406,7 +420,7 @@ CO_RT_THREAD_ISR() {
 #endif
 
         /* verify timer overflow */
-#warning "errorReport service is temporally disabled"
+#warning "err Report service is temporally disabled"
 //        if (CO_RT_THREAD_ISR_FLAG == 1) {
 //            CO_errorReport(CO->em, CO_EM_ISR_TIMER_OVERFLOW,
 //                           CO_EMC_SOFTWARE_INTERNAL, 0);
@@ -441,12 +455,15 @@ CO_CANRX_ISR() {
 #warning "New Update method, but SSL service may require to reuse some code, or all, of the Initialization stage"
 int CO_Update ()
 {
-    static CO_NMT_reset_cmd_t reset = CO_RESET_NOT;
-    uint32_t CO_timer_us_previous = 0;
+    static CO_NMT_reset_cmd_t reset = CO_RESET_NOT;// do not forget it must be static!!! Otherwise, cycletime will grow forever.
+    static uint32_t CO_timer_us_previous = 0;
     
     if (reset == CO_RESET_NOT)
-    {        
-        CO_RT_THREAD_ISR();
+    {     
+        
+        
+        //works when called from here. Interrupt not calling it?
+        //CO_RT_THREAD_ISR(); //////////////////////////ES:CHECK was removed in co3
         
 /* loop for normal program execution ******************************************/
 
@@ -472,32 +489,136 @@ int CO_Update ()
 #endif
     }
 
-/* program exit ***************************************************************/
+/* program reset or exit ***************************************************************/
     else
     {
-#warning "CANOpen exit conditions is not ready yet!"
-    //    CO_RT_THREAD_ENABLE(0);
-        CO_CANRX_ENABLE(0);
+        if ( CO_RESET_COMM == reset )
+        {
+#warning "Testing a COMM RESET!"
+            reset = CommReset();
+        }
+        
+        else // exit app - it should never happen
+        {        
+        //    CO_RT_THREAD_ENABLE(0);
+            CO_CANRX_ENABLE(0);
 
-        /* Execute external application code */
-        app_programEnd();
+            /* Execute external application code */
+            app_programEnd();
 
-    #if (CO_CONFIG_STORAGE) & CO_CONFIG_STORAGE_ENABLE
-        CO_storageEeprom_auto_process(&storage, true);
-    #endif
+        #if (CO_CONFIG_STORAGE) & CO_CONFIG_STORAGE_ENABLE
+            CO_storageEeprom_auto_process(&storage, true);
+        #endif
 
-        /* delete objects from memory */
-        CO_CANsetConfigurationMode(CO->CANmodule->CANptr);
-        CO_delete(CO);
+            /* delete objects from memory */
+            CO_CANsetConfigurationMode(CO->CANmodule->CANptr);
+            CO_delete(CO);
 
-        /* reset microcontroller */
-        SYSKEY = 0x00000000;
-        SYSKEY = 0xAA996655;
-        SYSKEY = 0x556699AA;
-        RSWRSTSET = 1;
-        (void) RSWRST;
-        while (1);
+            /* reset microcontroller */
+            SYSKEY = 0x00000000;
+            SYSKEY = 0xAA996655;
+            SYSKEY = 0x556699AA;
+            RSWRSTSET = 1;
+            (void) RSWRST;
+            while (1);
+        }
     }
     
     return (int)reset; // valid to notify errors/reset
+}
+
+
+
+// COMM_RESET
+CO_NMT_reset_cmd_t CommReset ()
+//    while (reset != CO_RESET_APP) {
+{
+/* CANopen communication reset - initialize CANopen objects *******************/
+    uint32_t errInfo;
+
+    /* disable CAN receive interrupts */
+    CO_CANRX_ENABLE(0);
+
+    /* initialize CANopen */
+    CO_ReturnError_t err = CO_CANinit(CO, (void *)_CAN1_BASE_ADDRESS,
+                     mlStorage.pendingBitRate);
+    if (err != CO_ERROR_NO) {
+        while (1) CO_clearWDT();
+    }
+
+    CO_LSS_address_t lssAddress = {.identity = {
+        .vendorID = OD_PERSIST_COMM.x1018_identity.vendor_ID,
+        .productCode = OD_PERSIST_COMM.x1018_identity.productCode,
+        .revisionNumber = OD_PERSIST_COMM.x1018_identity.revisionNumber,
+        .serialNumber = OD_PERSIST_COMM.x1018_identity.serialNumber
+    }};
+    err = CO_LSSinit(CO, &lssAddress,
+                     &mlStorage.pendingNodeId, &mlStorage.pendingBitRate);
+    if (err != CO_ERROR_NO) {
+        while (1) CO_clearWDT();
+    }
+
+    CO_activeNodeId = mlStorage.pendingNodeId;
+    errInfo = 0;
+
+    err = CO_CANopenInit(CO,                /* CANopen object */
+                         NULL,              /* alternate NMT */
+                         NULL,              /* alternate em */
+                         OD,                /* Object dictionary */
+                         OD_STATUS_BITS,    /* Optional OD_statusBits */
+                         NMT_CONTROL,       /* CO_NMT_control_t */
+                         FIRST_HB_TIME,     /* firstHBTime_ms */
+                         SDO_SRV_TIMEOUT_TIME, /* SDOserverTimeoutTime_ms */
+                         SDO_CLI_TIMEOUT_TIME, /* SDOclientTimeoutTime_ms */
+                         SDO_CLI_BLOCK,     /* SDOclientBlockTransfer */
+                         CO_activeNodeId,
+                         &errInfo);
+    if (err != CO_ERROR_NO && err != CO_ERROR_NODE_ID_UNCONFIGURED_LSS) {
+        while (1) CO_clearWDT();
+    }
+
+    /* Execute external application code */
+    uint32_t errInfo_app_programStart = 0;
+
+    /* Emergency messages in case of errors */
+    if (!CO->nodeIdUnconfigured) {
+        if (errInfo == 0) errInfo = errInfo_app_programStart;
+        if (errInfo != 0) {
+            CO_errorReport(CO->em, CO_EM_INCONSISTENT_OBJECT_DICT,
+                           CO_EMC_DATA_SET, errInfo);
+        }
+#if (CO_CONFIG_STORAGE) & CO_CONFIG_STORAGE_ENABLE
+        if (storageInitError != 0) {
+            CO_errorReport(CO->em, CO_EM_NON_VOLATILE_MEMORY,
+                           CO_EMC_HARDWARE, storageInitError);
+        }
+#endif
+    }
+
+    /* initialize callbacks */
+    CO_LSSslave_initCkBitRateCall(CO->LSSslave, NULL, CO_LSSchkBitrateCallback);
+    CO_LSSslave_initCfgStoreCall(CO->LSSslave, &mlStorage, LSScfgStoreCallback);
+
+    /* Execute external application code */
+    app_communicationReset(CO);
+
+    errInfo = 0;
+    err = CO_CANopenInitPDO(CO,             /* CANopen object */
+                            CO->em,         /* emergency object */
+                            OD,             /* Object dictionary */
+                            CO_activeNodeId,
+                            &errInfo);
+    if (err != CO_ERROR_NO && err != CO_ERROR_NODE_ID_UNCONFIGURED_LSS) {
+        while (1) CO_clearWDT();
+    }
+
+
+    /* start CAN and enable interrupts */
+    CO_CANsetNormalMode(CO->CANmodule);
+
+    CO_RT_THREAD_ENABLE(1);        
+    CO_CANRX_ENABLE(1);
+    
+    return CO_RESET_NOT;
+//    } /* while(reset != CO_RESET_APP */
 }
