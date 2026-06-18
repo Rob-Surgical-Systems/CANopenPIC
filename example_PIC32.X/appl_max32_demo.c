@@ -101,7 +101,7 @@ void app_programAsync(CO_t *co, uint32_t timer1usDiff) {
         
         if( 20000U == count )
         {
-            CO_NMT_sendCommand(co->NMT, CO_NMT_ENTER_OPERATIONAL, 0x03);    
+            CO_NMT_sendCommand(co->NMT, CO_NMT_ENTER_OPERATIONAL, 0x02);    
 }
 
 //        else if( 20100U == count )
@@ -144,7 +144,7 @@ void app_programAsync(CO_t *co, uint32_t timer1usDiff) {
         {
             isReset = false;
             CO_NMT_sendInternalCommand(co->NMT, CO_NMT_ENTER_OPERATIONAL);           // 1.2.1. second, recover to OP, just itself or...
-            CO_NMT_sendCommand(co->NMT, CO_NMT_ENTER_OPERATIONAL, 0);                 // to all nodes? including itself
+            CO_NMT_sendCommand(co->NMT, CO_NMT_ENTER_OPERATIONAL, 2);                 // to all nodes? including itself
         }
         
         if ( 0 != co->CANmodule->CANerrorStatus ) // checks flag bits - any        

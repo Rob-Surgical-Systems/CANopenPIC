@@ -373,7 +373,7 @@ int CO_Init () {
         /* start CAN and enable interrupts */
         CO_CANsetNormalMode(CO->CANmodule);
 
-        //CO_RT_THREAD_ENABLE(1);//ES:todo double check added from CO3
+        CO_RT_THREAD_ENABLE(1);//ES:todo double check added from CO3
         CO_CANRX_ENABLE(1);
         reset = CO_RESET_NOT;
 //    } /* while(reset != CO_RESET_APP */
