@@ -102,24 +102,13 @@ void app_programAsync(CO_t *co, uint32_t timer1usDiff) {
         if( 20000U == count )
         {
             CO_NMT_sendCommand(co->NMT, CO_NMT_ENTER_OPERATIONAL, 0x02);    
-}
+        }
 
-//        else if( 20100U == count )
-//        {
-//            CO_NMT_sendCommand(co->NMT, CO_NMT_ENTER_OPERATIONAL, 0x04);
-//        }
-//
-//        else if( 20200U == count )
-//        {
-//            CO_NMT_sendCommand(co->NMT, CO_NMT_ENTER_OPERATIONAL, 0x05);  
-//        }
-//        
-//        else if( 20300U == count )
-//        {
-//            CO_NMT_sendCommand(co->NMT, CO_NMT_ENTER_OPERATIONAL, 0x06);
-//            
-//            IsNmtOp = true; // end
-//        }
+        else if( 20100U == count )
+        {
+            CO_NMT_sendCommand(co->NMT, CO_NMT_ENTER_OPERATIONAL, 0x03);
+            //IsNmtOp = true;
+        }
 
         else { } // good practice
         
@@ -143,8 +132,12 @@ void app_programAsync(CO_t *co, uint32_t timer1usDiff) {
         if ( true == isReset )
         {
             isReset = false;
+         
             CO_NMT_sendInternalCommand(co->NMT, CO_NMT_ENTER_OPERATIONAL);           // 1.2.1. second, recover to OP, just itself or...
-            CO_NMT_sendCommand(co->NMT, CO_NMT_ENTER_OPERATIONAL, 2);                 // to all nodes? including itself
+            CO_NMT_sendCommand(co->NMT, CO_NMT_ENTER_OPERATIONAL, 2);                 
+            CO_NMT_sendCommand(co->NMT, CO_NMT_ENTER_OPERATIONAL, 3);   
+//            CO_NMT_sendCommand(co->NMT, CO_NMT_ENTER_OPERATIONAL, 0);                 // to all nodes? including itself
+
         }
         
         if ( 0 != co->CANmodule->CANerrorStatus ) // checks flag bits - any        
@@ -159,12 +152,12 @@ void app_programAsync(CO_t *co, uint32_t timer1usDiff) {
         static enum SdoUploadFrame_t sdoFrame       = SDO_UPLOAD_BUS_VOLTAGE;   // current fsm frame
         static enum SdoUploadFrame_t sdoFrameNext   = SDO_UPLOAD_BUS_VOLTAGE;   // next fsm frame
 
-        const unsigned char DECIMATOR_MAX   = 60U;                       // 60 iterations @ 5 [ms] = 300 [ms] between messages
-        static unsigned char decimator      = 60U;                       // the first one should not be too early... after NMT at least...
+        const unsigned short DECIMATOR_MAX   = 60000U;                       // 600 at 1 60 iterations @ 5 [ms] = 300 [ms] between messages
+        static unsigned short decimator      = 60000U;                       // the first one should not be too early... after NMT at least...
         // COB-ID for each Wx, all SDO uploads but not with the same payload lenght, index or subindex.
-        const unsigned short WX_CAN_ID_MAX  = 6U; // W6
-        const unsigned short WX_CAN_ID_MIN  = 3U; // W3 
-        static unsigned short wxId          = 3U;
+        const unsigned short WX_CAN_ID_MAX  = 3U; // beta
+        const unsigned short WX_CAN_ID_MIN  = 2U; // W4 
+        static unsigned short wxId          = 2U;
 
         uint16_t idx        = 0x2060;           // default for SDO_UPLOAD_BUS_VOLTAGE SDO frame
         uint8_t subidx      = 0x00;             // always zero...
