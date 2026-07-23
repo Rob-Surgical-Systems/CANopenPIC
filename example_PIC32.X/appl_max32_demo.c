@@ -34,10 +34,11 @@
 #include "OD.h"
 
 #include "device.h" // LEDs!
+#include "SharedParameters.h"
 
 /* CANopen LED diodes, already initialized in DEV_Init(), renamed here for easier integration. */
 #define CAN_INIT_LEDS() _nop()
-#define CAN_RUN_LED     LED_TEST_WR
+#define CAN_RUN_LED     LED_ERROR_WR
 #define CAN_ERROR_LED   LED_ERROR_WR
 
 enum SdoUploadFrame_t                       /// The SDO upload frames sent periodically to each Denali Wx driver.
@@ -84,6 +85,121 @@ void app_communicationReset(CO_t *co) {
 void app_programEnd() {
     CAN_RUN_LED = 0; CAN_ERROR_LED = 0;
 }
+
+
+
+
+
+
+/**
+ * 
+ * @param SDO_C
+ * @param nodeId
+ * @param index
+ * @param subIndex
+ * @param buf
+ * @param bufSize
+ * @param readSize
+ * @return isInProgress
+ */
+//bool prepare_read_SDO( CO_SDOclient_t* SDO_C, uint8_t nodeId, uint16_t index, uint8_t subIndex,
+//        uint8_t* buf, size_t bufSize, size_t* readSize) 
+//{
+//    CO_SDO_return_t SDO_ret;
+//
+//    // setup client (this can be skipped, if remote device don't change)
+//    SDO_ret = CO_SDOclient_setup(SDO_C, CO_CAN_ID_SDO_CLI + nodeId, CO_CAN_ID_SDO_SRV + nodeId, nodeId);
+//    if (SDO_ret != CO_SDO_RT_ok_communicationEnd) {
+//        return false;
+//    }
+//
+//    // initiate upload
+//    SDO_ret = CO_SDOclientUploadInitiate(SDO_C, index, subIndex, 1000, false);
+//    if (SDO_ret != CO_SDO_RT_ok_communicationEnd) {
+//        return false;
+//    }
+//
+//    return true;
+//}
+    
+
+
+
+
+
+//    
+//bool dummy(){    
+//    //ce qui est là dessous doit être appelé dans la boucle principale (après avoir fait ce qui est au dessus) jsq retourner 0
+//    // upload data
+//    do {
+//        uint32_t timeDifference_us = 10000;
+//        CO_SDO_abortCode_t abortCode = CO_SDO_AB_NONE;
+//
+//        SDO_ret = CO_SDOclientUpload(SDO_C, timeDifference_us, false, &abortCode, NULL, NULL, NULL);
+//        if (SDO_ret < 0) {
+//            return abortCode;
+//        }
+//
+//        sleep_us(timeDifference_us);
+//    } while (SDO_ret > 0);
+//
+//    // copy data to the user buffer (for long data function must be called several times inside the loop)
+//    *readSize = CO_SDOclientUploadBufRead(SDO_C, buf, bufSize);
+//
+//    return CO_SDO_AB_NONE;
+//}
+
+
+
+bool prepare_write_SDO ( CO_SDOclient_t* SDO_C, uint8_t nodeId, uint16_t index, uint8_t subIndex, uint8_t* data, size_t dataSize ) 
+{
+    CO_SDO_return_t SDO_ret;
+    bool_t bufferPartial = false;
+
+    // setup client (this can be skipped, if remote device is the same)
+    SDO_ret = CO_SDOclient_setup(SDO_C, CO_CAN_ID_SDO_CLI + nodeId, CO_CAN_ID_SDO_SRV + nodeId, nodeId);
+    if (SDO_ret != CO_SDO_RT_ok_communicationEnd) 
+    {
+        return false;
+    }
+
+    // initiate download
+    SDO_ret = CO_SDOclientDownloadInitiate(SDO_C, index, subIndex, dataSize, 1000, false);
+    if (SDO_ret != CO_SDO_RT_ok_communicationEnd) 
+    {
+        return false;
+    }
+
+    // fill data
+    size_t nWritten = CO_SDOclientDownloadBufWrite(SDO_C, data, dataSize);
+    if (nWritten < dataSize) {
+        bufferPartial = true;
+        // If SDO Fifo buffer is too small, data can be refilled in the loop.
+    }
+
+    return true;
+}
+    
+
+
+
+
+//bool dummy2(){
+//    // download data
+//    do {
+//        uint32_t timeDifference_us = 10000;
+//        CO_SDO_abortCode_t abortCode = CO_SDO_AB_NONE;
+//
+//        CO_SDO_return_t SDO_ret = CO_SDOclientDownload(, timeDifference_us, false, false, &abortCode, NULL, NULL);
+//        if (SDO_ret < 0) {
+//            return abortCode;
+//        }
+//
+//        sleep_us(timeDifference_us);
+//    } while (SDO_ret > 0);
+//
+//    return CO_SDO_AB_NONE;
+//}
 
 
 /******************************************************************************/
@@ -147,126 +263,132 @@ void app_programAsync(CO_t *co, uint32_t timer1usDiff) {
             CO_NMT_sendInternalCommand( co->NMT, CO_NMT_RESET_COMMUNICATION);           // 1.2.2. first, reset comms      
             isReset = true;
         }
+        
+        
+
+        
+        static bool inProgress = false;
+        static int flagInProgress = -1;
+        
+        if ( false == inProgress )
+        {
+
+            //checking sdo flags - received data from ethercat COEs?
+
+            //1 capitan constants
+
+            int totalFlags = FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_W4_POSITION_KD - FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_BETA_VELOCITY_KP;
+
+            for ( int i = 0 ; i < totalFlags ; i++ )
+            {
+
+                int flag = (int)FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_BETA_VELOCITY_KP + i;
+
+                if ( true == DEV_PeriphParams_GetUpdateFlag( (FLAGS_PERIPH_PARAMS)flag ) )
+                {
+
+        //up to here ok
+                    uint8_t nodeId = 2;
+
+                    //initiate sdo upload
+                    if(flag >= FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_W4_POSITION_KP)
+                    {
+                        nodeId = 3;
+                    }
+
+
+                    uint8_t* data = (uint8_t*)&OD_RAM.x250A_velocityLoopKp;
+                    uint16_t reg = 0x250A;
                     
-//        // 2. Cyclic SDO - Simple FSM for SDO upload frames iteration, which are directly related to the EtherCAT PDI
-//        static enum SdoUploadFrame_t sdoFrame       = SDO_UPLOAD_BUS_VOLTAGE;   // current fsm frame
-//        static enum SdoUploadFrame_t sdoFrameNext   = SDO_UPLOAD_BUS_VOLTAGE;   // next fsm frame
-//
-//        const unsigned short DECIMATOR_MAX   = 600U;                       // 600 at 1 60 iterations @ 5 [ms] = 300 [ms] between messages
-//        static unsigned short decimator      = 600U;                       // the first one should not be too early... after NMT at least...
-//        // COB-ID for each Wx, all SDO uploads but not with the same payload lenght, index or subindex.
-//        const unsigned short WX_CAN_ID_MAX  = 3U; // beta
-//        const unsigned short WX_CAN_ID_MIN  = 2U; // W4 
-//        static unsigned short wxId          = 2U;
-//
-//        uint16_t idx        = 0x2060;           // default for SDO_UPLOAD_BUS_VOLTAGE SDO frame
-//        uint8_t subidx      = 0x00;             // always zero...
-//
-//        CO_SDO_abortCode_t  abortCode;
-//        size_t              sizeTransferred;
-//        CO_SDO_return_t     SDO_ret;
-//        uint32_t            timeDiff_us = 1000U;
-//        uint32_t            timeNext_us = 2000U;
-//
-//        bool updateWxId = false;                // set to TRUE either via Rx message or timeout
-//        static bool isSdoClientReady = false;   // true when setup/configured and initialized
-//
-//        sdoFrame = sdoFrameNext; // updates FSM
-//
-//        if ( ( false == isSdoClientReady ) && ( --decimator < 1U ) ) // 2.1., note decimator only evaluated&decremented if SDO client is not ready
-//        {
-//            decimator = DECIMATOR_MAX; // restart!
-//
-//            switch ( sdoFrame )
-//            {
-//                case SDO_UPLOAD_BUS_VOLTAGE:
-//                    idx         = 0x2060;                
-//                    break;
-//
-//                case SDO_UPLOAD_POWER_STAGE_TEMPERATURE:                
-//                    idx         = 0x2061;                
-//                    break;
-//
-//                case SDO_UPLOAD_SYSTEM_LAST_ERROR:                
-//                    idx         = 0x5E49;                
-//                    break;
-//
-//                case SDO_UPLOAD_STO_STATUS:                
-//                    idx         = 0x251A;                
-//                    break;
-//
-//                case SDO_UPLOAD_ERROR_TOTAL_NUMBER:                
-//                    idx         = 0x264D;                
-//                    break;
-//
-//                case SDO_UPLOAD_TOTAL:
-//                default:
-//                    sdoFrameNext = (enum SdoUploadFrame_t)(0); // safety!
-//                    return; // error!
-//            }
-//            
-//            /* setup client */
-//            SDO_ret = CO_SDOclient_setup(co->SDOclient, (uint32_t)CO_CAN_ID_SDO_CLI + wxId, (uint32_t)CO_CAN_ID_SDO_SRV + wxId, wxId); // all the same value, it works ok
-//            if (SDO_ret != CO_SDO_RT_ok_communicationEnd) {
-//                return; // error!
-//            }
-//
-//            /* initiate upload */
-//            uint16_t timeout_ms = 100U;
-//            SDO_ret = CO_SDOclientUploadInitiate(co->SDOclient, idx, subidx, timeout_ms, true);
-//            if (SDO_ret != CO_SDO_RT_ok_communicationEnd) {
-//                return; // error!
-//            }
-//
-//            else{
-//                isSdoClientReady = true;
-//            }            
-//        }
-//
-//        // 2.2. Loops over Rx but only if SDO client is ready
-//        if( true == isSdoClientReady )
-//        {
-//            SDO_ret = CO_SDOclientUpload(co->SDOclient, timeDiff_us, false, &abortCode, NULL, &sizeTransferred, &timeNext_us);                 // non-blocking
-//
-//            if (SDO_ret < CO_SDO_RT_ok_communicationEnd) {
-//                updateWxId = true; // error
-//            }
-//            /* Response data must be read, partially or whole */
-//            else if ((SDO_ret == CO_SDO_RT_uploadDataBufferFull) || (SDO_ret == CO_SDO_RT_ok_communicationEnd)) {
-//
-//                // Parsing! hence, ready via EtherCAT too!
-//                uint16_t rxIdx      = co->SDOclient->CANrxData[1];          // LSB
-//                rxIdx               |= (co->SDOclient->CANrxData[2] << 8);  // MSB
-//                uint8_t rxSubIdx    = co->SDOclient->CANrxData[3];
-//
-//                //app_sdoCustomParsing( wxId, rxIdx, rxSubIdx, &co->SDOclient->CANrxData[4] );
-//                updateWxId = true;
-//
-//                // Function must be called after finish of each SDO client communication cycle
-//                CO_SDOclientClose(co->SDOclient);
-//            }
-//
-//            else // still waiting?
-//            {
-//                static unsigned char timeout = 0xFF;
-//                if ( 0 == --timeout ){ // overflows automatically!
-//                    updateWxId = true; // timeout error!
-//                }
-//            }
-//
-//            // 3. Updates Wx ID and messages ID (FSM)
-//            if( true == updateWxId )        // note this is a local variable initialized to false always
-//            {
-//                isSdoClientReady = false;   // 3.1. Resets SDO client ready flag
-//
-//                if(++wxId > WX_CAN_ID_MAX)  // 3.2. Increments and checks Wx ID overflow!
-//                {
-//                    wxId = WX_CAN_ID_MIN;
-//                    if( ++sdoFrameNext >= SDO_UPLOAD_TOTAL)         // 3.3. Increments and checks SDO frame ID overflow
-//                        sdoFrameNext = (enum SdoUploadFrame_t)(0);  // safest reset!
-//                }
-//            }
-//        }
+                    //CAREFUL work because data is in the right order on both sides. Do not move things around carelessly
+                    data += sizeof(float) * (flag - FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_BETA_VELOCITY_KP);
+                    
+                    
+
+                    switch ( flag )
+                    {
+                        case FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_BETA_VELOCITY_KP :
+                        {
+                            //initialised value
+                            break;
+                        }
+                        case FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_BETA_VELOCITY_KI :
+                        {
+                            reg = 0x250B;
+                            break;
+                        }
+                        case FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_BETA_VELOCITY_KD :
+                        {
+                            reg = 0x250C;
+                            break;
+                        }
+                        case FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_BETA_POSITION_KP :
+                        case FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_W4_POSITION_KP :
+                        {
+                            reg = 0x2511;
+                            break;
+                        }
+                        case FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_BETA_POSITION_KI :
+                        case FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_W4_POSITION_KI :
+                        {
+                            reg = 0x2512;
+                            break;
+                        }
+                        case FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_BETA_POSITION_KD :
+                        case FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_W4_POSITION_KD :
+                        {
+                            reg = 0x2513;
+                            break;
+                        }
+                        case FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_BETA_TORQUE_KP :
+                        {
+                            reg = 0x2523;
+                            break;
+                        }
+                        case FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_BETA_TORQUE_KI :
+                        {
+                            reg = 0x2524;
+                            break;
+                        }
+
+
+
+                    }
+
+
+                    inProgress = prepare_write_SDO ( co->SDOclient, nodeId, reg, 0, data, sizeof(float) );
+                    if( true == inProgress )
+                    {
+                        
+                        flagInProgress = flag;
+                    }
+                    break;
+                }
+
+            }
+        }
+        else //finish exchange
+        {
+                
+                CO_SDO_abortCode_t abortCode = CO_SDO_AB_NONE;
+
+                CO_SDO_return_t SDO_ret = CO_SDOclientDownload(co->SDOclient, timer1usDiff, false, false, &abortCode, NULL, NULL);
+                if (SDO_ret <= 0) 
+                {
+                    if (SDO_ret == 0);//if exchange finished
+                    {
+                        LED_TEST_ON
+                        DEV_PeriphParams_ClearUpdateFlag( (FLAGS_PERIPH_PARAMS) flagInProgress );
+                    }
+                    inProgress = false;
+                    flagInProgress = -1;
+                }
+
+            
+        }
+
+ 
+        
     }
 }
 
@@ -324,96 +446,3 @@ void app_peripheralWrite(CO_t *co, uint32_t timer1usDiff) {
     //LATAbits.LATA6 = (digOut & 0x40) ? 1 : 0;
     //LATAbits.LATA7 = (digOut & 0x80) ? 1 : 0;
 }
-
-
-//int app_sdoCustomParsing( unsigned short Wx, unsigned short Index, unsigned char SubIndex, uint8_t* Buff )
-//{
-//    switch ( Index )
-//    {
-//        case ( 0x2060 ): // BUS_VOLTAGE
-//            
-//            switch ( Wx )
-//            {
-//                case ( 2U ):
-//                memcpy( &OD_RAM., Buff, sizeof(OD_RAM.) );
-//                break;
-//                case ( 3U ):
-//                    memcpy( &OD_RAM., Buff, sizeof(OD_RAM.) );
-//                    break;
-//                default:
-//                    return 1; // error
-//            }            
-//            
-//            break;
-//            
-//        case ( 0x2061 ): // POWER_STAGE_TEMPERATURE
-//            
-//            switch ( Wx )
-//            {
-//                case ( 2U ):
-//                memcpy( &OD_RAM., Buff, sizeof(OD_RAM.) );
-//                break;
-//                case ( 3U ):
-//                    memcpy( &OD_RAM., Buff, sizeof(OD_RAM.) );
-//                    break;
-//                default:
-//                    return 1; // error
-//            }            
-//            
-//            break;
-//            
-//        case ( 0x5E49 ): // SYSTEM_LAST_ERROR
-//            
-//            switch ( Wx )
-//            {
-//                case ( 2U ):
-//                memcpy( &OD_RAM., Buff, sizeof(OD_RAM.) );
-//                break;
-//                case ( 3U ):
-//                    memcpy( &OD_RAM., Buff, sizeof(OD_RAM.) );
-//                    break;
-//                default:
-//                    return 1; // error
-//            }            
-//            
-//            break;          
-//            
-//        case ( 0x251A ): // STO_STATUS
-//            
-//            switch ( Wx )
-//            {
-//                case ( 2U ):
-//                memcpy( &OD_RAM.x251A_STOStatus, Buff, sizeof(OD_RAM.) );
-//                break;
-//                case ( 3U ):
-//                    memcpy( &OD_RAM., Buff, sizeof(OD_RAM.) );
-//                    break;
-//                default:
-//                    return 1; // error
-//            }            
-//            
-//            break;
-//            
-//
-//        case ( 0x264D ): // ERROR_TOTAL_NUMBER
-//            
-//            switch ( Wx )
-//            {
-//                case ( 2U ):
-//                memcpy( &OD_RAM., Buff, sizeof(OD_RAM.) );
-//                break;
-//                case ( 3U ):
-//                    memcpy( &OD_RAM., Buff, sizeof(OD_RAM.) );
-//                    break;
-//                default:
-//                    return 1; // error
-//            }            
-//            
-//            break;
-//            
-//        default: // unknown index?
-//            return 1;
-//    }
-//    
-//    return 0; // Ok!
-//}

@@ -462,8 +462,7 @@ int CO_Update ()
     {     
         
         
-        //works when called from here. Interrupt not calling it?
-        //CO_RT_THREAD_ISR(); //////////////////////////ES:CHECK was removed in co3
+
         
 /* loop for normal program execution ******************************************/
 
@@ -478,7 +477,7 @@ int CO_Update ()
         reset = CO_process(CO, false, timeDifference_us, NULL);
 
         CO_clearWDT();
-
+        
         /* Execute external application code */
         app_programAsync(CO, timeDifference_us);
 
