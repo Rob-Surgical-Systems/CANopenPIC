@@ -225,6 +225,12 @@ void app_programAsync(CO_t *co, uint32_t timer1usDiff) {
             CO_NMT_sendCommand(co->NMT, CO_NMT_ENTER_OPERATIONAL, 0x03);
             IsNmtOp = true;
         }
+        
+        else if( 20200U == count )
+        {
+            CO_NMT_sendCommand(co->NMT, CO_NMT_ENTER_OPERATIONAL, 0x04);
+            IsNmtOp = true;
+        }
 
         else { } // good practice
         
@@ -250,9 +256,11 @@ void app_programAsync(CO_t *co, uint32_t timer1usDiff) {
             isReset = false;
          
             CO_NMT_sendInternalCommand(co->NMT, CO_NMT_ENTER_OPERATIONAL);           // 1.2.1. second, recover to OP, just itself or...
-            CO_NMT_sendCommand(co->NMT, CO_NMT_ENTER_OPERATIONAL, 2);                 
-            CO_NMT_sendCommand(co->NMT, CO_NMT_ENTER_OPERATIONAL, 3);   
-//            CO_NMT_sendCommand(co->NMT, CO_NMT_ENTER_OPERATIONAL, 0);                 // to all nodes? including itself
+            CO_NMT_sendCommand(co->NMT, CO_NMT_ENTER_OPERATIONAL, 2);//beta                 
+            CO_NMT_sendCommand(co->NMT, CO_NMT_ENTER_OPERATIONAL, 3); //w4
+            CO_NMT_sendCommand(co->NMT, CO_NMT_ENTER_OPERATIONAL, 4); //pp2
+            // pl?
+            //CO_NMT_sendCommand(co->NMT, CO_NMT_ENTER_OPERATIONAL, 0);                 // to all nodes? including itself
 
         }
         
@@ -297,7 +305,7 @@ void app_programAsync(CO_t *co, uint32_t timer1usDiff) {
                     }
 
 
-                    uint8_t* data = (uint8_t*)&OD_RAM.x250A_velocityLoopKp;
+                    uint8_t* data = (uint8_t*)&OD_RAM.x250A_betaVelocityLoopKp;
                     uint16_t reg = 0x250A;
                     
                     //CAREFUL work because data is in the right order on both sides. Do not move things around carelessly
