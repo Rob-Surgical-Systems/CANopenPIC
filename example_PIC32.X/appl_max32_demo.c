@@ -223,7 +223,6 @@ void app_programAsync(CO_t *co, uint32_t timer1usDiff) {
         else if( 20100U == count )
         {
             CO_NMT_sendCommand(co->NMT, CO_NMT_ENTER_OPERATIONAL, 0x03);
-            IsNmtOp = true;
         }
         
         else if( 20200U == count )
