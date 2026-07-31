@@ -304,19 +304,34 @@ void app_programAsync(CO_t *co, uint32_t timer1usDiff) {
                     }
 
 
-                    uint8_t* data = (uint8_t*)&OD_RAM.x250A_betaVelocityLoopKp;
-                    uint16_t reg = 0x250A;
+                    uint8_t* data = (uint8_t*)&OD_RAM.x2505_betaDirectCurrentLoopKp;
+                    uint16_t reg = 0x2505;
                     
                     //CAREFUL work because data is in the right order on both sides. Do not move things around carelessly
-                    data += sizeof(float) * (flag - FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_BETA_VELOCITY_KP);
+                    data += sizeof(float) * (flag - FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_BETA_CURRENT_KP);
                     
                     
 
                     switch ( flag )
                     {
+                        case FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_BETA_CURRENT_KP :
+                        {
+                            //INIT VALUE
+                            break;
+                        }
+                        case FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_BETA_CURRENT_KI :
+                        {
+                            reg = 0x2506;
+                            break;
+                        }
+                        case FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_BETA_CURRENT_KD :
+                        {
+                            reg = 0x2507;
+                            break;
+                        }
                         case FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_BETA_VELOCITY_KP :
                         {
-                            //initialised value
+                            reg = 0x250A;//initialised value
                             break;
                         }
                         case FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_BETA_VELOCITY_KI :
