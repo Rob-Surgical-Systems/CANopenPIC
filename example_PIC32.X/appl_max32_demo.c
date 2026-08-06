@@ -276,134 +276,197 @@ void app_programAsync(CO_t *co, uint32_t timer1usDiff) {
         
         static bool inProgress = false;
         static int flagInProgress = -1;
+        static int eventTimerInProgress = -1;
+        static bool eventTimerSet[2][4] = {0};
+        static bool allEventTimersSet = false;
         
+        
+
         if ( false == inProgress )
         {
-
-            //checking sdo flags - received data from ethercat COEs?
-
-            //1 capitan constants
-
-            int totalFlags = FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_W4_POSITION_KD - FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_BETA_VELOCITY_KP;
-
-            for ( int i = 0 ; i < totalFlags ; i++ )
+            
+            if ( false == allEventTimersSet )
             {
+                
 
-                int flag = (int)FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_BETA_VELOCITY_KP + i;
-
-                if ( true == DEV_PeriphParams_GetUpdateFlag( (FLAGS_PERIPH_PARAMS)flag ) )
+                for(int j = 0 ; j <= 1 ; j++ )  
                 {
-
-        //up to here ok
-                    uint8_t nodeId = 2;
-
-                    //initiate sdo upload
-                    if(flag >= FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_W4_POSITION_KP)
+                    for ( int i = 0 ; i < 4 ; i++ )
                     {
-                        nodeId = 3;
-                    }
+                        if ( false == eventTimerSet[j][i] )
+                        {
 
+                            //up to here ok
+                            uint8_t nodeId = j+2;
 
-                    uint8_t* data = (uint8_t*)&OD_RAM.x2505_betaDirectCurrentLoopKp;
-                    uint16_t reg = 0x2505;
-                    
-                    //CAREFUL work because data is in the right order on both sides. Do not move things around carelessly
-                    data += sizeof(float) * (flag - FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_BETA_CURRENT_KP);
-                    
-                    
+                            static uint16_t eventTimerDummy = 5;
+                            uint8_t* data = (uint8_t*)&eventTimerDummy;
+                            uint16_t reg = 0x1800 + i;
 
-                    switch ( flag )
-                    {
-                        case FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_BETA_CURRENT_KP :
-                        {
-                            //INIT VALUE
-                            break;
-                        }
-                        case FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_BETA_CURRENT_KI :
-                        {
-                            reg = 0x2506;
-                            break;
-                        }
-                        case FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_BETA_CURRENT_KD :
-                        {
-                            reg = 0x2507;
-                            break;
-                        }
-                        case FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_BETA_VELOCITY_KP :
-                        {
-                            reg = 0x250A;//initialised value
-                            break;
-                        }
-                        case FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_BETA_VELOCITY_KI :
-                        {
-                            reg = 0x250B;
-                            break;
-                        }
-                        case FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_BETA_VELOCITY_KD :
-                        {
-                            reg = 0x250C;
-                            break;
-                        }
-                        case FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_BETA_POSITION_KP :
-                        case FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_W4_POSITION_KP :
-                        {
-                            reg = 0x2511;
-                            break;
-                        }
-                        case FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_BETA_POSITION_KI :
-                        case FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_W4_POSITION_KI :
-                        {
-                            reg = 0x2512;
-                            break;
-                        }
-                        case FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_BETA_POSITION_KD :
-                        case FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_W4_POSITION_KD :
-                        {
-                            reg = 0x2513;
-                            break;
-                        }
-                        case FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_BETA_TORQUE_KP :
-                        {
-                            reg = 0x2523;
-                            break;
-                        }
-                        case FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_BETA_TORQUE_KI :
-                        {
-                            reg = 0x2524;
-                            break;
+                            inProgress = prepare_write_SDO ( co->SDOclient, nodeId, reg, 5, data, 2 );
+                            if( true == inProgress )
+                            {
+                                eventTimerInProgress = j*4 + i;
+                            }
+
+                            break;//out tpdo loop
                         }
 
+                    }//for TPDOs
 
-
-                    }
-
-
-                    inProgress = prepare_write_SDO ( co->SDOclient, nodeId, reg, 0, data, sizeof(float) );
                     if( true == inProgress )
-                    {
-                        
-                        flagInProgress = flag;
-                    }
-                    break;
-                }
+                        break;// out node loop
+
+                }//for nodes  
+
 
             }
-        }
-        else //finish exchange
+            else //if all event timers already set
+            {
+                //checking sdo flags - received data from ethercat COEs?
+
+                //1 capitan constants
+
+                int totalFlags = FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_W4_POSITION_KD - FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_BETA_VELOCITY_KP;
+
+                for ( int i = 0 ; i < totalFlags ; i++ )
+                {
+
+                    int flag = (int)FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_BETA_VELOCITY_KP + i;
+
+                    if ( true == DEV_PeriphParams_GetUpdateFlag( (FLAGS_PERIPH_PARAMS)flag ) )
+                    {
+
+            //up to here ok
+                        uint8_t nodeId = 2;
+
+                        //initiate sdo upload
+                        if(flag >= FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_W4_POSITION_KP)
+                        {
+                            nodeId = 3;
+                        }
+
+
+                        uint8_t* data = (uint8_t*)&OD_RAM.x2505_betaDirectCurrentLoopKp;
+                        uint16_t reg = 0x2505;
+
+                        //CAREFUL work because data is in the right order on both sides. Do not move things around carelessly
+                        data += sizeof(float) * (flag - FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_BETA_CURRENT_KP);
+
+
+
+                        switch ( flag )
+                        {
+                            case FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_BETA_CURRENT_KP :
+                            {
+                                //INIT VALUE
+                                break;
+                            }
+                            case FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_BETA_CURRENT_KI :
+                            {
+                                reg = 0x2506;
+                                break;
+                            }
+                            case FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_BETA_CURRENT_KD :
+                            {
+                                reg = 0x2507;
+                                break;
+                            }
+                            case FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_BETA_VELOCITY_KP :
+                            {
+                                reg = 0x250A;//initialised value
+                                break;
+                            }
+                            case FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_BETA_VELOCITY_KI :
+                            {
+                                reg = 0x250B;
+                                break;
+                            }
+                            case FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_BETA_VELOCITY_KD :
+                            {
+                                reg = 0x250C;
+                                break;
+                            }
+                            case FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_BETA_POSITION_KP :
+                            case FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_W4_POSITION_KP :
+                            {
+                                reg = 0x2511;
+                                break;
+                            }
+                            case FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_BETA_POSITION_KI :
+                            case FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_W4_POSITION_KI :
+                            {
+                                reg = 0x2512;
+                                break;
+                            }
+                            case FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_BETA_POSITION_KD :
+                            case FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_W4_POSITION_KD :
+                            {
+                                reg = 0x2513;
+                                break;
+                            }
+                            case FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_BETA_TORQUE_KP :
+                            {
+                                reg = 0x2523;
+                                break;
+                            }
+                            case FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_BETA_TORQUE_KI :
+                            {
+                                reg = 0x2524;
+                                break;
+                            }
+
+
+
+                        }
+
+
+                        inProgress = prepare_write_SDO ( co->SDOclient, nodeId, reg, 0, data, sizeof(float) );
+                        if( true == inProgress )
+                        {
+                            flagInProgress = flag;
+                            
+                        }
+                        break;
+                    }
+
+                }//loop flags coming from ethercat COEs
+            }//if-else conditions to send sdo 
+            
+        }//end if not in progress
+
+        else //if in progress, finish exchange
         {
                 
                 CO_SDO_abortCode_t abortCode = CO_SDO_AB_NONE;
 
                 CO_SDO_return_t SDO_ret = CO_SDOclientDownload(co->SDOclient, timer1usDiff, false, false, &abortCode, NULL, NULL);
-                if (SDO_ret <= 0) 
+                if (SDO_ret <= 0) //if exchange finished
                 {
-                    if (SDO_ret == 0);//if exchange finished
+                    if (SDO_ret == 0);//if exchange finished successfully
                     {
                         LED_TEST_ON
-                        DEV_PeriphParams_ClearUpdateFlag( (FLAGS_PERIPH_PARAMS) flagInProgress );
+
+                        // is an eventtimer sdo in progress?
+                        if( 0 <= eventTimerInProgress )
+                        {
+                            int rest = eventTimerInProgress%4;
+                            int div = eventTimerInProgress/4;
+                            eventTimerSet[div][rest] = true;
+                            
+                        }
+                        else //other sdo triggered by ethercat COE
+                        {
+                            DEV_PeriphParams_ClearUpdateFlag( (FLAGS_PERIPH_PARAMS) flagInProgress );
+                        }
+                        
+                        
                     }
-                    inProgress = false;
+                    
+                    //resetting in progress flags
+                    eventTimerInProgress = -1;
                     flagInProgress = -1;
+                    inProgress = false;
                 }
 
             
