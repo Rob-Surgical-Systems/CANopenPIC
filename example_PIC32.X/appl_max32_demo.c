@@ -102,55 +102,39 @@ void app_programEnd() {
  * @param readSize
  * @return isInProgress
  */
-//bool prepare_read_SDO( CO_SDOclient_t* SDO_C, uint8_t nodeId, uint16_t index, uint8_t subIndex,
-//        uint8_t* buf, size_t bufSize, size_t* readSize) 
-//{
-//    CO_SDO_return_t SDO_ret;
-//
-//    // setup client (this can be skipped, if remote device don't change)
-//    SDO_ret = CO_SDOclient_setup(SDO_C, CO_CAN_ID_SDO_CLI + nodeId, CO_CAN_ID_SDO_SRV + nodeId, nodeId);
-//    if (SDO_ret != CO_SDO_RT_ok_communicationEnd) {
-//        return false;
-//    }
-//
-//    // initiate upload
-//    SDO_ret = CO_SDOclientUploadInitiate(SDO_C, index, subIndex, 1000, false);
-//    if (SDO_ret != CO_SDO_RT_ok_communicationEnd) {
-//        return false;
-//    }
-//
-//    return true;
-//}
+bool prepare_read_SDO( CO_SDOclient_t* SDO_C, uint8_t nodeId, uint16_t index, uint8_t subIndex, size_t* readSize) 
+{
+    CO_SDO_return_t SDO_ret;
+
+    // setup client (this can be skipped, if remote device don't change)
+    SDO_ret = CO_SDOclient_setup(SDO_C, CO_CAN_ID_SDO_CLI + nodeId, CO_CAN_ID_SDO_SRV + nodeId, nodeId);
+    if (SDO_ret != CO_SDO_RT_ok_communicationEnd) {
+        return false;
+    }
+
+    // initiate upload
+    SDO_ret = CO_SDOclientUploadInitiate(SDO_C, index, subIndex, 1000, false);
+    if (SDO_ret != CO_SDO_RT_ok_communicationEnd) {
+        return false;
+    }
+
+    return true;
+}
     
 
 
 
 
-
-//    
-//bool dummy(){    
-//    //ce qui est là dessous doit être appelé dans la boucle principale (après avoir fait ce qui est au dessus) jsq retourner 0
-//    // upload data
-//    do {
-//        uint32_t timeDifference_us = 10000;
-//        CO_SDO_abortCode_t abortCode = CO_SDO_AB_NONE;
-//
-//        SDO_ret = CO_SDOclientUpload(SDO_C, timeDifference_us, false, &abortCode, NULL, NULL, NULL);
-//        if (SDO_ret < 0) {
-//            return abortCode;
-//        }
-//
-//        sleep_us(timeDifference_us);
-//    } while (SDO_ret > 0);
-//
-//    // copy data to the user buffer (for long data function must be called several times inside the loop)
-//    *readSize = CO_SDOclientUploadBufRead(SDO_C, buf, bufSize);
-//
-//    return CO_SDO_AB_NONE;
-//}
-
-
-
+/**
+ * 
+ * @param SDO_C
+ * @param nodeId
+ * @param index
+ * @param subIndex
+ * @param data
+ * @param dataSize
+ * @return 
+ */
 bool prepare_write_SDO ( CO_SDOclient_t* SDO_C, uint8_t nodeId, uint16_t index, uint8_t subIndex, uint8_t* data, size_t dataSize ) 
 {
     CO_SDO_return_t SDO_ret;
@@ -180,26 +164,6 @@ bool prepare_write_SDO ( CO_SDOclient_t* SDO_C, uint8_t nodeId, uint16_t index, 
     return true;
 }
     
-
-
-
-
-//bool dummy2(){
-//    // download data
-//    do {
-//        uint32_t timeDifference_us = 10000;
-//        CO_SDO_abortCode_t abortCode = CO_SDO_AB_NONE;
-//
-//        CO_SDO_return_t SDO_ret = CO_SDOclientDownload(, timeDifference_us, false, false, &abortCode, NULL, NULL);
-//        if (SDO_ret < 0) {
-//            return abortCode;
-//        }
-//
-//        sleep_us(timeDifference_us);
-//    } while (SDO_ret > 0);
-//
-//    return CO_SDO_AB_NONE;
-//}
 
 
 /******************************************************************************/
@@ -279,7 +243,8 @@ void app_programAsync(CO_t *co, uint32_t timer1usDiff) {
         static int eventTimerInProgress = -1;
         static bool eventTimerSet[2][4] = {0};
         static bool allEventTimersSet = false;
-        
+        static uint8_t* readBufInProgress = NULL;
+        static size_t   readBufSizeInProgress = 0;
         
 
         if ( false == inProgress )
@@ -311,6 +276,9 @@ void app_programAsync(CO_t *co, uint32_t timer1usDiff) {
 
                             break;//out tpdo loop
                         }
+                        
+                        //we only reach this portion if the break just above is not reached, in which case all event timers are set.
+                        allEventTimersSet = true;
 
                     }//for TPDOs
 
@@ -327,101 +295,154 @@ void app_programAsync(CO_t *co, uint32_t timer1usDiff) {
 
                 //1 capitan constants
 
-                int totalFlags = FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_W4_POSITION_KD - FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_BETA_VELOCITY_KP;
+                int totalFlags = FLAGS_PERIPH_PARAMS_READ_CAPITAN_W4_POSITION_KD - FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_BETA_QUAD_CURRENT_KP;
 
                 for ( int i = 0 ; i < totalFlags ; i++ )
                 {
 
-                    int flag = (int)FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_BETA_VELOCITY_KP + i;
+                    int flag = (int)FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_BETA_QUAD_CURRENT_KP + i;
 
                     if ( true == DEV_PeriphParams_GetUpdateFlag( (FLAGS_PERIPH_PARAMS)flag ) )
                     {
-
             //up to here ok
                         uint8_t nodeId = 2;
 
-                        //initiate sdo upload
-                        if(flag >= FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_W4_POSITION_KP)
+                        //initiate sdo download (client pov) or upload (client pov) (clients are pp2 and capitans)
+
+                        if( (flag >= FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_W4_POSITION_KP && flag <= FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_W4_POSITION_KD) 
+                            || (flag >= FLAGS_PERIPH_PARAMS_READ_CAPITAN_W4_POSITION_KP && flag <= FLAGS_PERIPH_PARAMS_READ_CAPITAN_W4_POSITION_KD)    
+                                )
+                            
                         {
                             nodeId = 3;
                         }
+                        
+                        
 
-
-                        uint8_t* data = (uint8_t*)&OD_RAM.x2505_betaDirectCurrentLoopKp;
-                        uint16_t reg = 0x2505;
-
-                        //CAREFUL work because data is in the right order on both sides. Do not move things around carelessly
-                        data += sizeof(float) * (flag - FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_BETA_CURRENT_KP);
-
-
-
+                        //selecting right register
+                        uint16_t reg = 0x2500;
+                        
                         switch ( flag )
                         {
-                            case FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_BETA_CURRENT_KP :
+                            case FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_BETA_QUAD_CURRENT_KP :
+                            case FLAGS_PERIPH_PARAMS_READ_CAPITAN_BETA_QUAD_CURRENT_KP :
                             {
                                 //INIT VALUE
                                 break;
                             }
+                            case FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_BETA_QUAD_CURRENT_KI :
+                            case FLAGS_PERIPH_PARAMS_READ_CAPITAN_BETA_QUAD_CURRENT_KI :
+                            {
+                                reg = 0x2501;
+                                break;
+                            }
+                            case FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_BETA_QUAD_CURRENT_KD :
+                            case FLAGS_PERIPH_PARAMS_READ_CAPITAN_BETA_QUAD_CURRENT_KD :
+                            {
+                                reg = 0x2502;
+                                break;
+                            }
+                            case FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_BETA_CURRENT_KP :
+                            case FLAGS_PERIPH_PARAMS_READ_CAPITAN_BETA_CURRENT_KP :
+                            {
+                                reg = 0x2505;
+                                break;
+                            }
                             case FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_BETA_CURRENT_KI :
+                            case FLAGS_PERIPH_PARAMS_READ_CAPITAN_BETA_CURRENT_KI :
                             {
                                 reg = 0x2506;
                                 break;
                             }
                             case FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_BETA_CURRENT_KD :
+                            case FLAGS_PERIPH_PARAMS_READ_CAPITAN_BETA_CURRENT_KD :
                             {
                                 reg = 0x2507;
                                 break;
                             }
                             case FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_BETA_VELOCITY_KP :
+                            case FLAGS_PERIPH_PARAMS_READ_CAPITAN_BETA_VELOCITY_KP :
                             {
                                 reg = 0x250A;//initialised value
                                 break;
                             }
                             case FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_BETA_VELOCITY_KI :
+                            case FLAGS_PERIPH_PARAMS_READ_CAPITAN_BETA_VELOCITY_KI :
                             {
                                 reg = 0x250B;
                                 break;
                             }
                             case FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_BETA_VELOCITY_KD :
+                            case FLAGS_PERIPH_PARAMS_READ_CAPITAN_BETA_VELOCITY_KD :
                             {
                                 reg = 0x250C;
                                 break;
                             }
                             case FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_BETA_POSITION_KP :
                             case FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_W4_POSITION_KP :
+                            case FLAGS_PERIPH_PARAMS_READ_CAPITAN_BETA_POSITION_KP :
+                            case FLAGS_PERIPH_PARAMS_READ_CAPITAN_W4_POSITION_KP :
                             {
                                 reg = 0x2511;
                                 break;
                             }
                             case FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_BETA_POSITION_KI :
                             case FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_W4_POSITION_KI :
+                            case FLAGS_PERIPH_PARAMS_READ_CAPITAN_BETA_POSITION_KI :
+                            case FLAGS_PERIPH_PARAMS_READ_CAPITAN_W4_POSITION_KI :
                             {
                                 reg = 0x2512;
                                 break;
                             }
                             case FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_BETA_POSITION_KD :
                             case FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_W4_POSITION_KD :
+                            case FLAGS_PERIPH_PARAMS_READ_CAPITAN_BETA_POSITION_KD :
+                            case FLAGS_PERIPH_PARAMS_READ_CAPITAN_W4_POSITION_KD :
                             {
                                 reg = 0x2513;
                                 break;
                             }
                             case FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_BETA_TORQUE_KP :
+                            case FLAGS_PERIPH_PARAMS_READ_CAPITAN_BETA_TORQUE_KP :
                             {
                                 reg = 0x2523;
                                 break;
                             }
                             case FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_BETA_TORQUE_KI :
+                            case FLAGS_PERIPH_PARAMS_READ_CAPITAN_BETA_TORQUE_KI :
                             {
                                 reg = 0x2524;
                                 break;
                             }
-
-
+                        }                        
+                        
+                        
+                        //Selecting memory zone to access and preparing action
+                        //CAREFUL work because data is in the right order on both sides. Do not move things around carelessly
+                        
+                        uint8_t* data = (uint8_t*)&OD_RAM.x2500_betaCurrentQuadratureLoopKp;//first possible zone
+                        
+                        if( flag >= FLAGS_PERIPH_PARAMS_READ_CAPITAN_BETA_QUAD_CURRENT_KP)//read request
+                        {
+//                            LED_TEST_ON
+                            data += sizeof(float) * (flag - FLAGS_PERIPH_PARAMS_READ_CAPITAN_BETA_QUAD_CURRENT_KP );//where received data will be stored
+                            size_t dummyReadSize = 0;
+                            inProgress = prepare_read_SDO ( co->SDOclient, nodeId, reg, 0, &dummyReadSize );
+                            
+                            if ( true == inProgress )
+                            {
+                                readBufInProgress     = data;
+                                readBufSizeInProgress = sizeof(float);
+                            }
 
                         }
-
-
-                        inProgress = prepare_write_SDO ( co->SDOclient, nodeId, reg, 0, data, sizeof(float) );
+                        else //write request
+                        {
+                            data += sizeof(float) * (flag - FLAGS_PERIPH_PARAMS_WRITE_CAPITAN_BETA_QUAD_CURRENT_KP );//where data to send is stored
+                            inProgress = prepare_write_SDO ( co->SDOclient, nodeId, reg, 0, data, sizeof(float) );
+                        }
+                        
+                        
                         if( true == inProgress )
                         {
                             flagInProgress = flag;
@@ -437,16 +458,49 @@ void app_programAsync(CO_t *co, uint32_t timer1usDiff) {
 
         else //if in progress, finish exchange
         {
+            CO_SDO_abortCode_t abortCode = CO_SDO_AB_NONE;    
+            
+            
+            if( flagInProgress >= FLAGS_PERIPH_PARAMS_READ_CAPITAN_BETA_QUAD_CURRENT_KP )
+            {// read sdo in progress
+
+
+                CO_SDO_return_t SDO_ret = CO_SDOclientUpload(co->SDOclient, timer1usDiff, false, &abortCode, NULL, NULL, NULL);
+                if (SDO_ret <= 0) 
+                {
+                    if (SDO_ret == 0)//if exchange finished successfully
+                    {
+                        LED_TEST_ON
+                        
+                        
+                        size_t readSize = CO_SDOclientUploadBufRead(co->SDOclient, readBufInProgress, readBufSizeInProgress);
+
+//                        //should check readSize?                        
+//                        if(readSize < readBufSizeInProgress)
+//                            //todo error? retry? how many times?
+
+                        DEV_PeriphParams_ClearUpdateFlag( (FLAGS_PERIPH_PARAMS) flagInProgress );
+
+                    }
+                    
+                    //resetting in progress flags
+                    eventTimerInProgress = -1;
+                    flagInProgress = -1;
+                    inProgress = false;
+                    readBufInProgress       = NULL;
+                    readBufSizeInProgress   = 0;
+                 }
                 
-                CO_SDO_abortCode_t abortCode = CO_SDO_AB_NONE;
+            }
+            else //write sdo in progress (from coe or initial write of event timers)
+            {
 
                 CO_SDO_return_t SDO_ret = CO_SDOclientDownload(co->SDOclient, timer1usDiff, false, false, &abortCode, NULL, NULL);
                 if (SDO_ret <= 0) //if exchange finished
                 {
                     if (SDO_ret == 0);//if exchange finished successfully
                     {
-                        LED_TEST_ON
-
+                        
                         // is an eventtimer sdo in progress?
                         if( 0 <= eventTimerInProgress )
                         {
@@ -468,10 +522,11 @@ void app_programAsync(CO_t *co, uint32_t timer1usDiff) {
                     flagInProgress = -1;
                     inProgress = false;
                 }
+                
+            }
 
-            
+
         }
-
  
         
     }
