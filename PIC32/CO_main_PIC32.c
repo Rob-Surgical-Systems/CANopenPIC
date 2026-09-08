@@ -257,10 +257,6 @@ int CO_Init () {
 
     /* Execute external application code */
     uint32_t errInfo_app_programStart = 0;
-#warning "Baud rate set to 1Mbps!"
-    mlStorage.pendingBitRate    = (uint16_t)1000U;
-#warning "Node ID set to 0x01!"
-    mlStorage.pendingNodeId     = (uint8_t)0x01;
     err = app_programStart(&mlStorage.pendingBitRate,
                            &mlStorage.pendingNodeId,
                            &errInfo_app_programStart);
@@ -276,8 +272,6 @@ int CO_Init () {
         mlStorage.pendingNodeId = CO_LSS_NODE_ID_ASSIGNMENT;
     }
 
-//    while (reset != CO_RESET_APP) {
-    {
 /* CANopen communication reset - initialize CANopen objects *******************/
         uint32_t errInfo;
         static uint32_t CO_timer_us_previous = 0;
@@ -376,8 +370,6 @@ int CO_Init () {
         CO_RT_THREAD_ENABLE(1);//ES:todo double check added from CO3
         CO_CANRX_ENABLE(1);
         reset = CO_RESET_NOT;
-//    } /* while(reset != CO_RESET_APP */
-    }
     
     return (int)reset; // valid to notify errors...
 }
@@ -460,10 +452,7 @@ int CO_Update ()
     
     if (reset == CO_RESET_NOT)
     {     
-        
-        
-
-        
+               
 /* loop for normal program execution ******************************************/
 
         /* calculate time difference since last cycle */
@@ -487,6 +476,7 @@ int CO_Update ()
         CO_storageEeprom_auto_process(&storage, false);
 #endif
     }
+    //reset different than CO_RESET_NOT
 
 /* program reset or exit ***************************************************************/
     else
@@ -530,7 +520,6 @@ int CO_Update ()
 
 // COMM_RESET
 CO_NMT_reset_cmd_t CommReset ()
-//    while (reset != CO_RESET_APP) {
 {
 /* CANopen communication reset - initialize CANopen objects *******************/
     uint32_t errInfo;
@@ -619,5 +608,4 @@ CO_NMT_reset_cmd_t CommReset ()
     CO_CANRX_ENABLE(1);
     
     return CO_RESET_NOT;
-//    } /* while(reset != CO_RESET_APP */
 }
