@@ -130,12 +130,11 @@
 #define CO_clearWDT() (WDTCONSET = _WDTCON_WDTCLR_MASK)
 #endif
 
-
+//            CO_NMT_STARTUP_TO_OPERATIONAL \
 /* default values for CO_CANopenInit() */
 #ifndef NMT_CONTROL
 #define NMT_CONTROL \
-            CO_NMT_STARTUP_TO_OPERATIONAL \
-          | CO_NMT_ERR_ON_ERR_REG \
+           CO_NMT_ERR_ON_ERR_REG \
           | CO_ERR_REG_GENERIC_ERR \
           | CO_ERR_REG_COMMUNICATION
 #endif
