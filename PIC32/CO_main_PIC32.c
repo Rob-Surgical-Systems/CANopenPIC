@@ -344,6 +344,7 @@ int CO_Init () {
         CO_HBconsumer_initCallbackRemoteReset(CO->HBcons, 0, CO->NMT, onRemoteReset);
         CO_HBconsumer_initCallbackRemoteReset(CO->HBcons, 1, CO->NMT, onRemoteReset);
         CO_HBconsumer_initCallbackRemoteReset(CO->HBcons, 2, CO->NMT, onRemoteReset);
+        CO_HBconsumer_initCallbackRemoteReset(CO->HBcons, 3, CO->NMT, onRemoteReset);
 #endif        
                 
         CO_LSSslave_initCkBitRateCall(CO->LSSslave, NULL,
