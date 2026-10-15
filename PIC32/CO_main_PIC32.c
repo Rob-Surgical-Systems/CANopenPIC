@@ -163,15 +163,6 @@
 #define CO_STORAGE_AUTO_INTERVAL 60000000
 #endif
 
-#if (CO_CONFIG_NMT) & CO_CONFIG_NMT_MASTER
-
-void onRemoteReset(uint8_t nodeId, uint8_t idx, void* object) {
-    CO_NMT_t* nmt = (CO_NMT_t*) object;
-    CO_NMT_sendCommand(nmt, CO_NMT_ENTER_OPERATIONAL, nodeId);
-}
-
-#endif
-
 /* CANopen object */
 CO_t *CO = NULL;
 
@@ -340,13 +331,7 @@ int CO_Init () {
         }
 
         /* initialize callbacks */
-#if (CO_CONFIG_NMT) & CO_CONFIG_NMT_MASTER
-        CO_HBconsumer_initCallbackRemoteReset(CO->HBcons, 0, CO->NMT, onRemoteReset);
-        CO_HBconsumer_initCallbackRemoteReset(CO->HBcons, 1, CO->NMT, onRemoteReset);
-        CO_HBconsumer_initCallbackRemoteReset(CO->HBcons, 2, CO->NMT, onRemoteReset);
-        CO_HBconsumer_initCallbackRemoteReset(CO->HBcons, 3, CO->NMT, onRemoteReset);
-#endif        
-                
+               
         CO_LSSslave_initCkBitRateCall(CO->LSSslave, NULL,
                                       CO_LSSchkBitrateCallback);
         CO_LSSslave_initCfgStoreCall(CO->LSSslave, &mlStorage,
